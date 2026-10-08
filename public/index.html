@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EduSQL Vault & Lab Cloud | Save & Share SQL Queries & Notes</title>
+  <meta name="description" content="A fast, secure cloud vault and instant beam tool for school and college students to save SQL queries, lab assignments, and study notes on school computers and access them seamlessly from home.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <!-- sql.js for in-browser client SQLite execution -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+</head>
+<body>
+  <!-- Background Glow Accents -->
+  <div class="bg-glow-orb orb-1" aria-hidden="true"></div>
+  <div class="bg-glow-orb orb-2" aria-hidden="true"></div>
+
+  <!-- Top Global Navigation Bar -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-group">
+        <div class="brand-logo">
+          <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+          </svg>
+          <div class="logo-pulse"></div>
+        </div>
+        <div class="brand-text">
+          <h1 class="brand-title">EduSQL <span class="brand-badge">Vault</span></h1>
+          <p class="brand-subtitle">School Lab ⇄ Home Sync</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="main-nav" aria-label="Main Navigation">
+        <button class="nav-tab active" data-tab="runner" id="tab-btn-runner">
+          <span class="tab-icon">⚡</span>
+          <span>SQL Playground</span>
+        </button>
+        <button class="nav-tab" data-tab="vault" id="tab-btn-vault">
+          <span class="tab-icon">💾</span>
+          <span>My Student Vault</span>
+          <span class="badge-count" id="vault-count-badge" style="display:none;">0</span>
+        </button>
+        <button class="nav-tab" data-tab="beam" id="tab-btn-beam">
+          <span class="tab-icon">🚀</span>
+          <span>Quick Beam</span>
+        </button>
+        <button class="nav-tab" data-tab="community" id="tab-btn-community">
+          <span class="tab-icon">🌐</span>
+          <span>Class Board</span>
+        </button>
+        <button class="nav-tab" data-tab="cheatsheet" id="tab-btn-cheatsheet">
+          <span class="tab-icon">📚</span>
+          <span>Cheat Sheet & Viva</span>
+        </button>
+      </nav>
+
+      <!-- User Session Controls & Lab Mode Indicator -->
+      <div class="header-actions">
+        <!-- Lab Auto-lock & Panic Button -->
+        <div class="lab-mode-badge" id="lab-mode-container" title="School Lab Protection Active">
+          <span class="pulse-dot"></span>
+          <span id="lab-timer-display">Lab Safe: Active</span>
+        </div>
+
+        <button class="btn btn-icon btn-ghost" id="theme-toggle" title="Toggle Light/Dark Theme" aria-label="Toggle theme">
+          <span class="theme-icon-dark">🌙</span>
+          <span class="theme-icon-light" style="display:none;">☀️</span>
+        </button>
+
+        <div id="vault-auth-status">
+          <!-- Rendered dynamically by app.js: Unlock Vault button or Student Badge & Lock -->
+          <button class="btn btn-primary btn-sm" id="btn-open-unlock-modal">
+            <span>🔑 Unlock Vault</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Application Body -->
+  <main class="app-main">
+
+    <!-- ========================================================
+         VIEW 1: SQL PLAYGROUND & RUNNER (LIVE EXECUTION)
+         ======================================================== -->
+    <section class="tab-view active" id="view-runner">
+      <div class="runner-layout">
+        <!-- Left: Editor + Results stacked -->
+        <div class="editor-results-pane">
+          <!-- Editor Controls Toolbar -->
+          <div class="editor-toolbar">
+            <div class="toolbar-left">
+              <select id="sample-db-select" class="form-select select-sm" title="Switch active database">
+                <option value="university">🎓 University DB</option>
+                <option value="company">💼 Company DB</option>
+                <option value="library">📚 Library DB</option>
+                <option value="scratchpad">🧪 Scratch DB</option>
+              </select>
+              <button class="btn btn-xs btn-ghost" id="btn-reset-db" title="Reset to default data">↺ Reset</button>
+            </div>
+            <div class="toolbar-actions">
+              <button class="btn btn-sm btn-ghost" id="btn-format-sql" title="Format SQL keywords">Format</button>
+              <button class="btn btn-sm btn-ghost" id="btn-clear-sql" title="Clear editor">Clear</button>
+              <button class="btn btn-sm btn-secondary" id="btn-save-query-to-vault" title="Save to vault">💾 Save</button>
+              <button class="btn btn-sm btn-accent" id="btn-run-sql" title="Run Query (Ctrl+Enter)">
+                ▶ Run SQL
+              </button>
+            </div>
+          </div>
+
+          <!-- SQL Code Editor Box -->
+          <div class="code-editor-wrapper">
+            <div class="editor-gutter" id="editor-gutter">1</div>
+            <textarea id="sql-editor" class="code-textarea" spellcheck="false" placeholder="-- Type your SQL here...&#10;SELECT * FROM students LIMIT 10;"></textarea>
+          </div>
+
+          <!-- Status Bar -->
+          <div class="results-header-bar">
+            <div class="results-meta">
+              <span class="results-title">Output</span>
+              <span class="status-indicator" id="query-status-badge">Ready</span>
+              <span class="meta-item" id="query-exec-time" style="display:none;">⏱ 0ms</span>
+              <span class="meta-item" id="query-row-count" style="display:none;">0 rows</span>
+            </div>
+            <div class="results-actions" id="results-actions" style="display:none;">
+              <button class="btn btn-xs btn-outline" id="btn-copy-results-csv">CSV</button>
+              <button class="btn btn-xs btn-outline" id="btn-download-results-csv">↓ Download</button>
+            </div>
+          </div>
+
+          <!-- Results -->
+          <div class="results-view-container" id="results-container">
+            <div class="results-welcome-state">
+              <div class="welcome-icon">⚡</div>
+              <h4>SQL Engine Ready</h4>
+              <p>Write a query and press <strong>Run SQL</strong> or <strong>Ctrl+Enter</strong>.</p>
+              <button class="btn btn-sm btn-outline" id="btn-load-demo-query">Load Demo</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Available Tables panel -->
+        <aside class="schema-sidebar">
+          <div class="sidebar-header">
+            <div class="sidebar-title-row">
+              <span class="sidebar-label">Available Tables</span>
+              <span class="badge badge-pill" id="tables-count">0</span>
+            </div>
+          </div>
+
+          <!-- Tables previews -->
+          <div class="tables-preview-container" id="tables-list">
+            <div class="tree-placeholder">Loading...</div>
+          </div>
+
+          <!-- Quick Templates -->
+          <div class="quick-snippets-card">
+            <h4>Quick Templates</h4>
+            <div class="quick-tags-wrap">
+              <button class="tag-chip" data-template="SELECT * FROM students LIMIT 10;">SELECT *</button>
+              <button class="tag-chip" data-template="SELECT dept_id, COUNT(*) AS count FROM students GROUP BY dept_id;">GROUP BY</button>
+              <button class="tag-chip" data-template="SELECT s.student_name, c.course_name FROM students s INNER JOIN enrollments e ON s.student_id = e.student_id INNER JOIN courses c ON e.course_id = c.course_id;">JOIN</button>
+              <button class="tag-chip" data-template="SELECT student_name, gpa FROM students WHERE gpa > (SELECT AVG(gpa) FROM students);">Subquery</button>
+            </div>
+          </div>
+
+          <!-- hidden elements for compat -->
+          <span id="engine-status" style="display:none;">Engine Ready</span>
+          <button id="btn-export-current-schema" style="display:none;"></button>
+          <button id="btn-beam-query" style="display:none;"></button>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         VIEW 2: STUDENT VAULT (QUERIES & PERSONAL NOTES)
+         ======================================================== -->
+    <section class="tab-view" id="view-vault">
+      <!-- Locked State Warning if not logged in -->
+      <div id="vault-locked-state" class="empty-state-card">
+        <div class="empty-state-icon">🔒</div>
+        <h2>Student Vault is Locked</h2>
+        <p>Save your SQL queries, lab assignments, and personal revision notes at school and unlock them securely from home or any device.</p>
+        <div class="vault-unlock-prompt-box">
+          <p class="text-sm text-muted">Enter your Student ID (or Roll No.) and your PIN to unlock or create your vault instantly. No email verification required!</p>
+          <button class="btn btn-primary btn-lg" id="btn-prompt-unlock">
+            🔑 Unlock or Create Vault
+          </button>
+        </div>
+      </div>
+
+      <!-- Unlocked Vault Content -->
+      <div id="vault-unlocked-state" style="display:none;">
+        <div class="vault-header-banner">
+          <div class="vault-profile-info">
+            <div class="student-avatar" id="vault-avatar">S</div>
+            <div>
+              <div class="student-title-row">
+                <h2 id="vault-student-name">Student Vault</h2>
+                <span class="badge badge-accent" id="vault-student-id">CS-2026</span>
+              </div>
+              <p class="vault-subtitle">Syncs automatically between School Lab Computers & Home</p>
+            </div>
+          </div>
+          <div class="vault-banner-actions">
+            <button class="btn btn-sm btn-secondary" id="btn-new-query-modal">+ Query</button>
+            <button class="btn btn-sm btn-secondary" id="btn-new-note-modal">+ Note</button>
+            <button class="btn btn-sm btn-outline" id="btn-export-sql" title="Download .SQL">📥 SQL</button>
+            <button class="btn btn-sm btn-outline" id="btn-export-json" title="Download .JSON">📥 JSON</button>
+            <button class="btn btn-sm btn-ghost" id="btn-lock-vault" title="Lock vault">
+              🔒 Lock
+            </button>
+            <!-- hidden for compat -->
+            <div id="export-dropdown-menu" style="display:none;"></div>
+            <button id="btn-export-dropdown" style="display:none;"></button>
+          </div>
+        </div>
+
+        <!-- Filter & Search Bar -->
+        <div class="vault-filter-bar">
+          <div class="search-input-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="vault-search-input" placeholder="Search saved queries, titles, SQL keywords, or notes...">
+          </div>
+          <div class="filter-controls">
+            <select id="vault-type-filter" class="form-select select-sm">
+              <option value="all">All Items (Queries & Notes)</option>
+              <option value="queries">SQL Queries Only</option>
+              <option value="notes">Personal Notes Only</option>
+            </select>
+            <select id="vault-subject-filter" class="form-select select-sm">
+              <option value="all">All Subjects</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Saved Items Grid -->
+        <div class="vault-items-grid" id="vault-items-grid">
+          <!-- Dynamically populated cards -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         VIEW 3: QUICK BEAM (INSTANT 6-DIGIT CODE TRANSFER)
+         ======================================================== -->
+    <section class="tab-view" id="view-beam">
+      <div class="beam-hero-section">
+        <div class="beam-hero-text">
+          <h2>🚀 Quick Beam Transfer</h2>
+          <p>The fastest way to beam SQL queries or lab notes from a school computer to your home PC or mobile phone — <strong>zero login required!</strong></p>
+        </div>
+
+        <div class="beam-grid-container">
+          <!-- Card A: Receive / Claim Beam -->
+          <div class="beam-action-card receive-card">
+            <div class="card-badge-row">
+              <span class="badge badge-accent">HOME COMPUTER / RECEIVER</span>
+            </div>
+            <h3>📥 Open a Beamed Snippet</h3>
+            <p>At home? Enter the 6-character transfer code generated at school:</p>
+            
+            <form id="form-claim-beam" class="beam-form">
+              <div class="code-input-group">
+                <input type="text" id="beam-code-input" class="form-input beam-input" placeholder="e.g. SQL-4819" maxlength="10" required>
+                <button type="submit" class="btn btn-primary btn-beam-submit" id="btn-claim-beam">
+                  Retrieve
+                </button>
+              </div>
+              <p class="text-xs text-muted">Case-insensitive. Works instantly across all browsers and devices.</p>
+            </form>
+
+            <div id="claimed-beam-result" style="display:none;" class="claimed-result-box">
+              <div class="claimed-header">
+                <div>
+                  <h4 id="claimed-title">Beamed Query</h4>
+                  <span class="badge badge-subtle" id="claimed-subject">Lab DBMS</span>
+                </div>
+                <span class="text-xs text-muted" id="claimed-time">Just now</span>
+              </div>
+              <pre class="code-preview" id="claimed-content"></pre>
+              <div class="claimed-actions">
+                <button class="btn btn-sm btn-outline" id="btn-copy-claimed">📋 Copy Text</button>
+                <button class="btn btn-sm btn-primary" id="btn-run-claimed-in-runner">⚡ Open in SQL Runner</button>
+                <button class="btn btn-sm btn-secondary" id="btn-save-claimed-to-vault">💾 Save to My Vault</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card B: Send / Generate Beam -->
+          <div class="beam-action-card send-card">
+            <div class="card-badge-row">
+              <span class="badge badge-subtle">SCHOOL LAB / SENDER</span>
+            </div>
+            <h3>📤 Beam a Query or Note Now</h3>
+            <p>Leaving the lab? Paste your work below to get an instant 6-digit access code:</p>
+
+            <form id="form-create-beam" class="beam-form">
+              <div class="form-group">
+                <label for="beam-title-input" class="form-label text-xs">Title / Assignment Name:</label>
+                <input type="text" id="beam-title-input" class="form-input" placeholder="e.g. DBMS Lab 4 Joins & Subquery" required>
+              </div>
+              
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label for="beam-subject-input" class="form-label text-xs">Subject / Tag:</label>
+                  <input type="text" id="beam-subject-input" class="form-input" placeholder="DBMS Lab" value="DBMS Lab">
+                </div>
+                <div class="form-group flex-1">
+                  <label for="beam-expiry-select" class="form-label text-xs">Code Expires In:</label>
+                  <select id="beam-expiry-select" class="form-select">
+                    <option value="6">6 Hours</option>
+                    <option value="24" selected>24 Hours (Recommended)</option>
+                    <option value="72">3 Days</option>
+                    <option value="168">7 Days</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="beam-content-input" class="form-label text-xs">SQL Query or Personal Notes:</label>
+                <textarea id="beam-content-input" class="form-textarea" rows="6" placeholder="Paste your query or notes here..." required></textarea>
+              </div>
+
+              <button type="submit" class="btn btn-primary w-full" id="btn-generate-beam">
+                🚀 Generate Instant Beam Code
+              </button>
+            </form>
+
+            <div id="generated-beam-modal-card" style="display:none;" class="generated-code-box">
+              <h4>Your Beam Transfer Code:</h4>
+              <div class="code-display-hero">
+                <span class="huge-code" id="display-beam-code">SQL-0000</span>
+                <button class="btn btn-sm btn-outline" id="btn-copy-beam-code">Copy Code</button>
+              </div>
+              <p class="text-xs text-muted">Go to <strong>this site on your home computer</strong> and type this code in the box on the left, or open this direct link:</p>
+              <div class="direct-link-box">
+                <input type="text" id="display-beam-url" class="form-input text-xs" readonly>
+                <button class="btn btn-xs btn-outline" id="btn-copy-beam-url">Copy Link</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         VIEW 4: COMMUNITY & CLASS BOARD
+         ======================================================== -->
+    <section class="tab-view" id="view-community">
+      <div class="community-header-bar">
+        <div>
+          <h2>🌐 Class Shared Queries & Lab Solutions</h2>
+          <p class="text-muted">A collaborative library of verified SQL queries, schema templates, and solutions shared by students and instructors.</p>
+        </div>
+        <button class="btn btn-primary" id="btn-open-share-modal">
+          + Share a Query with Class
+        </button>
+      </div>
+
+      <div class="community-filter-row">
+        <div class="search-input-wrap flex-1">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="community-search-input" placeholder="Search shared queries, schema, window functions, joins...">
+        </div>
+        <div class="community-tags-filter" id="community-tags-bar">
+          <button class="tag-chip active" data-filter="all">All</button>
+          <button class="tag-chip" data-filter="joins">Joins</button>
+          <button class="tag-chip" data-filter="ddl">DDL / Schema</button>
+          <button class="tag-chip" data-filter="window-functions">Window Functions</button>
+          <button class="tag-chip" data-filter="subqueries">Subqueries</button>
+          <button class="tag-chip" data-filter="viva-prep">Viva Prep</button>
+        </div>
+      </div>
+
+      <div class="community-grid" id="community-grid">
+        <!-- Dynamically rendered community query cards -->
+      </div>
+    </section>
+
+    <!-- ========================================================
+         VIEW 5: SQL CHEAT SHEET & LAB VIVA PREP
+         ======================================================== -->
+    <section class="tab-view" id="view-cheatsheet">
+      <div class="cheatsheet-container">
+        <div class="cheatsheet-nav-pills">
+          <button class="pill-btn active" data-cheat-tab="joins">Visual SQL Joins</button>
+          <button class="pill-btn" data-cheat-tab="syntax">Syntax & Commands</button>
+          <button class="pill-btn" data-cheat-tab="clauses">Clauses Execution Order</button>
+          <button class="pill-btn" data-cheat-tab="viva">Top 20 Lab Viva Q&A</button>
+        </div>
+
+        <div id="cheat-tab-content" class="cheat-content-area">
+          <!-- Populated by js/cheatsheet.js -->
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================================
+       MODALS
+       ======================================================== -->
+
+  <!-- Modal: Unlock / Login Student Vault -->
+  <div class="modal-overlay" id="modal-unlock-vault" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">🔑</span>
+          <h3>Unlock Student Vault</h3>
+        </div>
+        <button class="btn-close-modal" id="btn-close-unlock-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-info-text">Enter your Roll Number or Student ID and a PIN. If it's your first time, this will automatically create your private cloud vault!</p>
+        
+        <form id="form-auth-vault">
+          <div class="form-group">
+            <label for="auth-student-id" class="form-label">Student ID / Roll No:</label>
+            <input type="text" id="auth-student-id" class="form-input" placeholder="e.g. CS2026-ALEX or ROLL-42" required autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label for="auth-pin" class="form-label">Passcode PIN (at least 3 characters):</label>
+            <input type="password" id="auth-pin" class="form-input" placeholder="e.g. 4829" required autocomplete="current-password">
+          </div>
+          <div class="form-group">
+            <label for="auth-student-name" class="form-label">Your Name (Optional):</label>
+            <input type="text" id="auth-student-name" class="form-input" placeholder="e.g. Alex Kumar">
+          </div>
+          
+          <div class="lab-safety-toggle">
+            <label class="checkbox-label">
+              <input type="checkbox" id="auth-lab-mode" checked>
+              <span><strong>School Lab Mode:</strong> Auto-lock and wipe session after 20 minutes of inactivity</span>
+            </label>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline" id="btn-cancel-auth">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btn-submit-auth">Unlock Vault</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Save / Edit Query -->
+  <div class="modal-overlay" id="modal-edit-query" style="display:none;">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">💾</span>
+          <h3 id="modal-query-title-text">Save Query to Vault</h3>
+        </div>
+        <button class="btn-close-modal" id="btn-close-query-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-save-query">
+          <input type="hidden" id="modal-query-id">
+          <div class="form-group">
+            <label for="modal-query-title" class="form-label">Query Title / Lab Problem:</label>
+            <input type="text" id="modal-query-title" class="form-input" placeholder="e.g. Lab 4: Nested Subqueries & Joins" required>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="modal-query-subject" class="form-label">Subject / Course:</label>
+              <input type="text" id="modal-query-subject" class="form-input" placeholder="e.g. Database Systems" value="Database Systems">
+            </div>
+            <div class="form-group flex-1">
+              <label for="modal-query-tags" class="form-label">Tags (comma separated):</label>
+              <input type="text" id="modal-query-tags" class="form-input" placeholder="e.g. joins, lab4, exam">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="modal-query-sql" class="form-label">SQL Code:</label>
+            <textarea id="modal-query-sql" class="form-textarea code-font" rows="8" required></textarea>
+          </div>
+          <div class="form-group">
+            <label for="modal-query-notes" class="form-label">Personal Notes / Explanation / Lab Observations:</label>
+            <textarea id="modal-query-notes" class="form-textarea" rows="3" placeholder="Remember to handle NULL values or explain why LEFT JOIN was needed for Question 3..."></textarea>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline" id="btn-cancel-query-modal">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btn-save-query-submit">Save Query</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Save / Edit Personal Note -->
+  <div class="modal-overlay" id="modal-edit-note" style="display:none;">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">📝</span>
+          <h3 id="modal-note-title-text">Personal Study Note</h3>
+        </div>
+        <button class="btn-close-modal" id="btn-close-note-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-save-note">
+          <input type="hidden" id="modal-note-id">
+          <div class="form-group">
+            <label for="modal-note-title" class="form-label">Note Title:</label>
+            <input type="text" id="modal-note-title" class="form-input" placeholder="e.g. Normalization 1NF to BCNF Summary" required>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="modal-note-subject" class="form-label">Subject / Course:</label>
+              <input type="text" id="modal-note-subject" class="form-input" placeholder="e.g. DBMS Theory" value="DBMS Theory">
+            </div>
+            <div class="form-group flex-1">
+              <label for="modal-note-tags" class="form-label">Tags (comma separated):</label>
+              <input type="text" id="modal-note-tags" class="form-input" placeholder="e.g. theory, normalization, viva">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="modal-note-content" class="form-label">Note Content (Markdown supported):</label>
+            <textarea id="modal-note-content" class="form-textarea" rows="10" placeholder="Write your notes here... You can use markdown like ## Headings, - Bullet points, and `code`" required></textarea>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline" id="btn-cancel-note-modal">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btn-save-note-submit">Save Note</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Share Query to Class Community Board -->
+  <div class="modal-overlay" id="modal-share-community" style="display:none;">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">🌐</span>
+          <h3>Share Query with Classmates</h3>
+        </div>
+        <button class="btn-close-modal" id="btn-close-share-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-info-text">Publish a helpful query solution, schema template, or lab assignment hint to the class board.</p>
+        <form id="form-share-community">
+          <div class="form-group">
+            <label for="share-query-title" class="form-label">Title / Problem Statement:</label>
+            <input type="text" id="share-query-title" class="form-input" placeholder="e.g. How to do Bank Transaction Balance Calculation" required>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="share-author-name" class="form-label">Your Name / Student Handle:</label>
+              <input type="text" id="share-author-name" class="form-input" placeholder="e.g. Rahul_CS or Anonymous" value="Student">
+            </div>
+            <div class="form-group flex-1">
+              <label for="share-subject" class="form-label">Subject:</label>
+              <input type="text" id="share-subject" class="form-input" placeholder="e.g. DBMS Lab" value="DBMS Lab">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="share-tags" class="form-label">Tags (e.g. joins, window-functions, ddl):</label>
+            <input type="text" id="share-tags" class="form-input" placeholder="e.g. joins, lab4, bank-db">
+          </div>
+          <div class="form-group">
+            <label for="share-sql" class="form-label">SQL Query Code:</label>
+            <textarea id="share-sql" class="form-textarea code-font" rows="7" required></textarea>
+          </div>
+          <div class="form-group">
+            <label for="share-description" class="form-label">Explanation / Hint for Batchmates:</label>
+            <textarea id="share-description" class="form-textarea" rows="3" placeholder="Explain what logic or trick you used..."></textarea>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline" id="btn-cancel-share-modal">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btn-submit-share">Share with Class</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Center -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- Client-side Application Scripts -->
+  <script src="js/cheatsheet.js"></script>
+  <script src="js/sql-engine.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,121 @@
+{
+  "11": {
+    "studentId": "11",
+    "studentName": "anubhav",
+    "salt": "75710e69cf67be6e9b830889bd47f394",
+    "pinHash": "f7902cc5f1e79e52645424912ff88e895403dad1ed42504da88bd07ea24c07e9",
+    "createdAt": "2026-10-08T14:18:10.672Z",
+    "lastActive": "2026-10-08T14:18:10.672Z",
+    "queries": [
+      {
+        "id": "q_1791469496531_n1u6",
+        "title": "Untitled Lab Query",
+        "sql": "insert into stud values(1, \"anubhav\",12,\"b\",\"m\",12234,\"11/02/2026\");",
+        "subject": "Database Systems",
+        "tags": [],
+        "notes": "",
+        "createdAt": "2026-10-08T14:24:56.531Z",
+        "updatedAt": "2026-10-08T14:24:56.531Z"
+      },
+      {
+        "id": "q_1791469090672",
+        "title": "My First Lab Query: University Enrollments",
+        "sql": "-- Welcome to your SQL Vault!\n-- You can write and test queries directly here or at home.\nSELECT \n    s.student_id,\n    s.student_name,\n    c.course_name,\n    e.grade\nFROM students s\nJOIN enrollments e ON s.student_id = e.student_id\nJOIN courses c ON e.course_id = c.course_id\nWHERE e.grade = 'A'\nORDER BY s.student_name;",
+        "subject": "Database Systems",
+        "tags": [
+          "joins",
+          "welcome",
+          "lab1"
+        ],
+        "notes": "Saved from lab computer. Tested with University DB sample dataset.",
+        "createdAt": "2026-10-08T14:18:10.672Z",
+        "updatedAt": "2026-10-08T14:18:10.672Z"
+      }
+    ],
+    "notes": [
+      {
+        "id": "n_1791469090672",
+        "title": "DBMS Lab Practical Cheat Sheet & Viva Tips",
+        "content": "# DBMS Lab Practical Notes & Tips\n\n## 1. Key SQL Clauses Order\n1. `FROM` & `JOIN`\n2. `WHERE` (filters rows before aggregation)\n3. `GROUP BY` (groups rows)\n4. `HAVING` (filters groups after aggregation)\n5. `SELECT` (computes expressions)\n6. `ORDER BY` (sorts result)\n7. `LIMIT` / `OFFSET`\n\n## 2. Common Lab Mistakes to Avoid\n- **WHERE vs HAVING**: Never put aggregate functions like `AVG()` in `WHERE`! Use `HAVING AVG(...) > 75`.\n- **Primary vs Foreign Keys**: Remember foreign keys must reference existing primary keys.\n- **SQL NULL comparisons**: Use `IS NULL` or `IS NOT NULL`, NOT `= NULL`!",
+        "subject": "Lab Notes",
+        "tags": [
+          "viva",
+          "theory",
+          "cheatsheet"
+        ],
+        "createdAt": "2026-10-08T14:18:10.672Z",
+        "updatedAt": "2026-10-08T14:18:10.672Z"
+      }
+    ]
+  },
+  "12": {
+    "studentId": "12",
+    "studentName": "anubhav",
+    "salt": "641882452250ebd837f1cb203a9b7ce3",
+    "pinHash": "4c038f28ec94135ed40e087c8b546117bf417a60f274ba5edd7a971085104e97",
+    "createdAt": "2026-10-08T14:25:57.474Z",
+    "lastActive": "2026-10-08T14:25:57.474Z",
+    "queries": [
+      {
+        "id": "q_1791469557474",
+        "title": "My First Lab Query: University Enrollments",
+        "sql": "-- Welcome to your SQL Vault!\n-- You can write and test queries directly here or at home.\nSELECT \n    s.student_id,\n    s.student_name,\n    c.course_name,\n    e.grade\nFROM students s\nJOIN enrollments e ON s.student_id = e.student_id\nJOIN courses c ON e.course_id = c.course_id\nWHERE e.grade = 'A'\nORDER BY s.student_name;",
+        "subject": "Database Systems",
+        "tags": [
+          "joins",
+          "welcome",
+          "lab1"
+        ],
+        "notes": "Saved from lab computer. Tested with University DB sample dataset.",
+        "createdAt": "2026-10-08T14:25:57.474Z",
+        "updatedAt": "2026-10-08T14:25:57.474Z"
+      }
+    ],
+    "notes": [
+      {
+        "id": "n_1791469557474",
+        "title": "DBMS Lab Practical Cheat Sheet & Viva Tips",
+        "content": "# DBMS Lab Practical Notes & Tips\n\n## 1. Key SQL Clauses Order\n1. `FROM` & `JOIN`\n2. `WHERE` (filters rows before aggregation)\n3. `GROUP BY` (groups rows)\n4. `HAVING` (filters groups after aggregation)\n5. `SELECT` (computes expressions)\n6. `ORDER BY` (sorts result)\n7. `LIMIT` / `OFFSET`\n\n## 2. Common Lab Mistakes to Avoid\n- **WHERE vs HAVING**: Never put aggregate functions like `AVG()` in `WHERE`! Use `HAVING AVG(...) > 75`.\n- **Primary vs Foreign Keys**: Remember foreign keys must reference existing primary keys.\n- **SQL NULL comparisons**: Use `IS NULL` or `IS NOT NULL`, NOT `= NULL`!",
+        "subject": "Lab Notes",
+        "tags": [
+          "viva",
+          "theory",
+          "cheatsheet"
+        ],
+        "createdAt": "2026-10-08T14:25:57.474Z",
+        "updatedAt": "2026-10-08T14:25:57.474Z"
+      }
+    ]
+  },
+  "01": {
+    "studentId": "01",
+    "studentName": "anubhav",
+    "salt": "121889a51a9664412470fff8d312b5b3",
+    "pinHash": "26cc3628a1638f423e609a24a45ec4075d94ad386ecf94636c607ddcd2a04f92",
+    "createdAt": "2026-10-08T15:07:52.610Z",
+    "lastActive": "2026-10-08T16:52:51.757Z",
+    "queries": [
+      {
+        "id": "q_1791472091514_xvi0",
+        "title": "Lab Query",
+        "sql": "CREATE TABLE stud (\n  rno integer PRIMARY KEY,\n  name varchar(50) NOT null,\n  class integer NOT null,\n  sec char(1) NOT null,\n  gen char(1) NOT null,\n  fee integer NOT null,\n  doj date NOT null\n  );",
+        "subject": "Database Systems",
+        "tags": [],
+        "notes": "",
+        "createdAt": "2026-10-08T15:08:11.514Z",
+        "updatedAt": "2026-10-08T15:08:11.514Z"
+      }
+    ],
+    "notes": [
+      {
+        "id": "n_1791478393792_qfp9",
+        "title": "jnbfd",
+        "content": "hai \nwrg",
+        "subject": "DBMS Lab",
+        "tags": [],
+        "createdAt": "2026-10-08T16:53:13.792Z",
+        "updatedAt": "2026-10-08T16:53:13.793Z"
+      }
+    ]
+  }
+}

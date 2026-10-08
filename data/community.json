@@ -1,0 +1,62 @@
+[
+  {
+    "id": "comm_1",
+    "title": "University DB: Top 3 Students Per Department by GPA",
+    "author": "Aarav (DBMS TA)",
+    "subject": "Database Systems",
+    "tags": [
+      "window-functions",
+      "rank",
+      "advanced"
+    ],
+    "sql": "-- Window function query to find top rankers per department\nSELECT \n    d.dept_name,\n    s.student_name,\n    s.gpa,\n    DENSE_RANK() OVER (\n        PARTITION BY s.dept_id \n        ORDER BY s.gpa DESC\n    ) AS rank_in_dept\nFROM students s\nJOIN departments d ON s.dept_id = d.dept_id\nQUALIFY rank_in_dept <= 3;",
+    "description": "Useful for practical lab exams covering analytical & window functions (DENSE_RANK / PARTITION BY).",
+    "upvotes": 42,
+    "createdAt": "2026-10-06T14:03:07.833Z"
+  },
+  {
+    "id": "comm_2",
+    "title": "Employee-Manager Hierarchy (Self Join)",
+    "author": "Priya_CS",
+    "subject": "DBMS Lab 3",
+    "tags": [
+      "joins",
+      "self-join",
+      "classic-lab"
+    ],
+    "sql": "-- Self-Join: Finding employee names alongside their manager's name\nSELECT \n    e.emp_id AS \"Employee ID\",\n    e.emp_name AS \"Employee Name\",\n    COALESCE(m.emp_name, 'TOP EXECUTIVE / NO MANAGER') AS \"Manager Name\",\n    e.salary AS \"Salary\"\nFROM employees e\nLEFT JOIN employees m ON e.manager_id = m.emp_id\nORDER BY m.emp_name ASC, e.emp_name ASC;",
+    "description": "Standard question in Lab Viva: handles root nodes/CEOs with COALESCE to avoid NULL display.",
+    "upvotes": 38,
+    "createdAt": "2026-10-07T14:03:07.834Z"
+  },
+  {
+    "id": "comm_3",
+    "title": "Complete Student-Course-Grade Schema with Sample Data",
+    "author": "Lab Instructor",
+    "subject": "DBMS Lab Practical",
+    "tags": [
+      "ddl",
+      "schema",
+      "starter-kit"
+    ],
+    "sql": "-- Create core tables for academic records\nCREATE TABLE IF NOT EXISTS departments (\n    dept_id INTEGER PRIMARY KEY,\n    dept_name TEXT NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS students (\n    student_id INTEGER PRIMARY KEY,\n    student_name TEXT NOT NULL,\n    dept_id INTEGER REFERENCES departments(dept_id),\n    email TEXT UNIQUE,\n    gpa REAL DEFAULT 0.0\n);\n\nCREATE TABLE IF NOT EXISTS courses (\n    course_id TEXT PRIMARY KEY,\n    course_name TEXT NOT NULL,\n    credits INTEGER DEFAULT 3\n);\n\nCREATE TABLE IF NOT EXISTS enrollments (\n    enroll_id INTEGER PRIMARY KEY AUTOINCREMENT,\n    student_id INTEGER REFERENCES students(student_id),\n    course_id TEXT REFERENCES courses(course_id),\n    grade TEXT CHECK(grade IN ('A+', 'A', 'B', 'C', 'D', 'F'))\n);",
+    "description": "Copy-paste ready DDL with foreign keys and constraints for university DBMS assignments.",
+    "upvotes": 65,
+    "createdAt": "2026-10-08T02:03:07.834Z"
+  },
+  {
+    "id": "comm_4",
+    "title": "Banking System: Customers with Overdue Balance & No Recent Deposits",
+    "author": "Rohan_SQL",
+    "subject": "Data Management",
+    "tags": [
+      "subqueries",
+      "aggregation",
+      "having"
+    ],
+    "sql": "-- Aggregate customer balances and filter using HAVING\nSELECT \n    c.account_no,\n    c.customer_name,\n    SUM(CASE WHEN t.tx_type = 'DEPOSIT' THEN t.amount ELSE -t.amount END) AS net_balance\nFROM customers c\nJOIN transactions t ON c.account_no = t.account_no\nGROUP BY c.account_no, c.customer_name\nHAVING net_balance < 500\nORDER BY net_balance ASC;",
+    "description": "Practical exam favorite demonstrating conditional SUM and HAVING clause filtering.",
+    "upvotes": 27,
+    "createdAt": "2026-10-08T09:03:07.834Z"
+  }
+]
