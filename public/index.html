@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>GAP Compiler</title>
+  <meta name="description" content="GAP Compiler is a SQL playground for students. Run queries, keep your work in My Zone, share it with Quick Share and swap solutions on the Class Board.">
+  <meta name="theme-color" content="#10151c">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+  <script src="js/theme-init.js"></script>
+</head>
+<body>
+  <!-- Icon sprite -->
+  <svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="i-terminal" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></symbol>
+      <symbol id="i-zone" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M6.5 19c1-3 3-4.5 5.5-4.5s4.5 1.5 5.5 4.5"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+      <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></symbol>
+      <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></symbol>
+      <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+      <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+      <symbol id="i-thumb" viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+      <symbol id="i-note" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></symbol>
+      <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></symbol>
+      <symbol id="i-reset" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+    </defs>
+  </svg>
+
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <div class="shell">
+    <!-- Navigation: left rail on desktop, bottom bar on phones -->
+    <aside class="rail">
+      <a class="brand" href="#/playground" aria-label="GAP Compiler home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8H8v16h4"/><path d="M20 8h4v16h-4"/></g><rect class="brand-cursor" x="15" y="12.5" width="2" height="7" rx="1"/></svg>
+        <span class="brand-name">GAP Compiler</span>
+      </a>
+
+      <nav class="nav" aria-label="Main">
+        <a href="#/playground" data-route="playground"><svg class="icon" aria-hidden="true"><use href="#i-terminal"/></svg><span>SQL Playground</span></a>
+        <a href="#/zone" data-route="zone"><svg class="icon" aria-hidden="true"><use href="#i-zone"/></svg><span>My Zone</span><span class="count" id="zone-count" hidden></span></a>
+        <a href="#/share" data-route="share"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg><span>Quick Share</span></a>
+        <a href="#/board" data-route="board"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Class Board</span></a>
+        <a href="#/viva" data-route="viva"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg><span>Viva</span></a>
+      </nav>
+
+      <div class="rail-foot">
+        <div id="account-rail"></div>
+        <button class="btn btn-ghost btn-sm theme-toggle" type="button" data-action="toggle-theme">
+          <svg class="icon icon-moon" aria-hidden="true"><use href="#i-moon"/></svg>
+          <svg class="icon icon-sun" aria-hidden="true"><use href="#i-sun"/></svg>
+          <span class="theme-label">Switch theme</span>
+        </button>
+      </div>
+    </aside>
+
+    <div class="content">
+      <!-- Phone header -->
+      <header class="topbar">
+        <a class="brand" href="#/playground" aria-label="GAP Compiler home">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8H8v16h4"/><path d="M20 8h4v16h-4"/></g><rect class="brand-cursor" x="15" y="12.5" width="2" height="7" rx="1"/></svg>
+          <span class="brand-name">GAP Compiler</span>
+        </a>
+        <div class="topbar-actions">
+          <button class="icon-btn" type="button" data-action="toggle-theme" aria-label="Switch theme">
+            <svg class="icon icon-moon" aria-hidden="true"><use href="#i-moon"/></svg>
+            <svg class="icon icon-sun" aria-hidden="true"><use href="#i-sun"/></svg>
+          </button>
+          <div id="account-top"></div>
+        </div>
+      </header>
+
+      <main id="main" tabindex="-1">
+
+        <!-- ================= SQL Playground ================= -->
+        <section class="view" id="view-playground" hidden aria-labelledby="h-playground">
+          <h1 id="h-playground" class="sr-only">SQL Playground</h1>
+          <div class="playground">
+            <div class="pg-main">
+              <div class="toolbar">
+                <div class="toolbar-group">
+                  <label class="sr-only" for="db-select">Database</label>
+                  <select id="db-select" class="select select-sm">
+                    <option value="university">University</option>
+                    <option value="company">Company</option>
+                    <option value="library">Library</option>
+                    <option value="scratchpad">Scratch (empty)</option>
+                  </select>
+                  <button class="btn btn-ghost btn-sm" type="button" id="btn-reset-db" title="Restore this database to its original data">
+                    <svg class="icon" aria-hidden="true"><use href="#i-reset"/></svg><span>Reset data</span>
+                  </button>
+                </div>
+                <div class="toolbar-group toolbar-actions">
+                  <button class="btn btn-ghost btn-sm" type="button" id="btn-format">Format</button>
+                  <button class="btn btn-ghost btn-sm" type="button" id="btn-clear">Clear</button>
+                  <button class="btn btn-secondary btn-sm" type="button" id="btn-save-zone">
+                    <svg class="icon" aria-hidden="true"><use href="#i-save"/></svg><span>Save to My Zone</span>
+                  </button>
+                  <button class="btn btn-secondary btn-sm" type="button" id="btn-share-query">
+                    <svg class="icon" aria-hidden="true"><use href="#i-send"/></svg><span>Quick Share</span>
+                  </button>
+                  <button class="btn btn-primary btn-sm" type="button" id="btn-run" title="Run (Ctrl+Enter)">
+                    <svg class="icon" aria-hidden="true"><use href="#i-play"/></svg><span>Run</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="editor">
+                <div class="gutter" id="gutter" aria-hidden="true">1</div>
+                <label class="sr-only" for="sql-editor">SQL editor</label>
+                <textarea id="sql-editor" spellcheck="false" autocapitalize="off" autocomplete="off" maxlength="50000" placeholder="Write SQL here, then press Run or Ctrl+Enter.&#10;&#10;Try: SELECT * FROM students;"></textarea>
+              </div>
+
+              <div class="output-bar">
+                <div class="output-meta">
+                  <h2 class="output-title">Output</h2>
+                  <span class="status" id="status" role="status">Ready</span>
+                  <span class="meta" id="meta-time" hidden></span>
+                  <span class="meta" id="meta-rows" hidden></span>
+                </div>
+                <div class="output-actions" id="output-actions" hidden>
+                  <button class="btn btn-ghost btn-sm" type="button" id="btn-copy-csv"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg><span>Copy CSV</span></button>
+                  <button class="btn btn-ghost btn-sm" type="button" id="btn-download-csv"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg><span>Download CSV</span></button>
+                </div>
+              </div>
+              <div class="output" id="output" aria-live="polite">
+                <div class="placeholder"><p>Results appear here after you run a query.</p></div>
+              </div>
+            </div>
+
+            <aside class="pg-side" aria-label="Database tables">
+              <div class="side-head">
+                <h2>Tables</h2>
+                <span class="pill" id="table-count">0</span>
+              </div>
+              <div id="table-list" class="table-list"></div>
+              <div class="templates">
+                <h3>Templates</h3>
+                <div class="chip-row" id="template-list"></div>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <!-- ================= My Zone ================= -->
+        <section class="view" id="view-zone" hidden aria-labelledby="h-zone">
+          <div class="page-head">
+            <div>
+              <h1 id="h-zone">My Zone</h1>
+              <p class="lede" id="zone-lede">Your saved queries and notes, available on any device.</p>
+            </div>
+            <div class="page-actions" id="zone-actions" hidden>
+              <button class="btn btn-primary" type="button" id="btn-new-query"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Create Query</span></button>
+              <button class="btn btn-secondary" type="button" id="btn-new-note"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Add Note</span></button>
+              <button class="btn btn-ghost" type="button" id="btn-export-sql" title="Download your queries as a .sql file"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg><span>Export SQL</span></button>
+              <button class="btn btn-ghost" type="button" id="btn-export-json" title="Download everything as a .json backup"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg><span>Backup</span></button>
+            </div>
+          </div>
+          <div id="zone-body"></div>
+        </section>
+
+        <!-- ================= Quick Share ================= -->
+        <section class="view" id="view-share" hidden aria-labelledby="h-share">
+          <div class="page-head">
+            <div>
+              <h1 id="h-share">Quick Share</h1>
+              <p class="lede">Move a query or note between computers with a short code. Open it anywhere, no sign-in needed.</p>
+            </div>
+          </div>
+
+          <div class="two-col">
+            <section class="panel" aria-labelledby="h-receive">
+              <h2 id="h-receive">Open a code</h2>
+              <form id="form-receive" class="stack" novalidate>
+                <div class="field">
+                  <label for="share-code-input">Code</label>
+                  <div class="inline-field">
+                    <input id="share-code-input" class="input mono code-input" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="9" placeholder="ABCD-2345">
+                    <button class="btn btn-primary" type="submit" id="btn-receive">Open</button>
+                  </div>
+                  <p class="hint">Codes have 8 letters and numbers, like ABCD-2345. Capitals and the dash are optional.</p>
+                </div>
+              </form>
+              <div id="receive-result"></div>
+            </section>
+
+            <section class="panel" aria-labelledby="h-send">
+              <h2 id="h-send">Create a code</h2>
+              <div id="send-body"></div>
+            </section>
+          </div>
+
+          <section class="panel" id="my-shares-panel" aria-labelledby="h-my-shares" hidden>
+            <h2 id="h-my-shares">Your active codes</h2>
+            <div id="my-shares"></div>
+          </section>
+        </section>
+
+        <!-- ================= Class Board ================= -->
+        <section class="view" id="view-board" hidden aria-labelledby="h-board">
+          <div class="page-head">
+            <div>
+              <h1 id="h-board">Class Board</h1>
+              <p class="lede">Queries and notes shared by students. Everything here was posted by a real person in your class.</p>
+            </div>
+            <div class="page-actions">
+              <button class="btn btn-primary" type="button" id="btn-board-query"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Share Query</span></button>
+              <button class="btn btn-secondary" type="button" id="btn-board-note"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Add Note</span></button>
+            </div>
+          </div>
+          <div class="filters" id="board-filters" hidden>
+            <div class="search">
+              <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
+              <label class="sr-only" for="board-search">Search the board</label>
+              <input id="board-search" class="input" type="search" placeholder="Search titles, SQL and notes">
+            </div>
+            <div class="chip-row" id="board-tags" role="group" aria-label="Filter by tag"></div>
+          </div>
+          <div id="board-body"></div>
+        </section>
+
+        <!-- ================= Viva ================= -->
+        <section class="view" id="view-viva" hidden aria-labelledby="h-viva">
+          <div class="page-head">
+            <div>
+              <h1 id="h-viva">Viva</h1>
+              <p class="lede">Questions examiners often ask in DBMS lab vivas. Open a question to see a short answer.</p>
+            </div>
+          </div>
+          <div id="viva-list" class="viva-list"></div>
+        </section>
+
+        <!-- ================= Account: log in / sign up / forgot ================= -->
+        <section class="view" id="view-auth" hidden aria-labelledby="h-auth">
+          <div class="auth-wrap">
+            <div class="auth-card">
+              <div class="auth-brand">
+                <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8H8v16h4"/><path d="M20 8h4v16h-4"/></g><rect class="brand-cursor" x="15" y="12.5" width="2" height="7" rx="1"/></svg>
+                <span class="brand-name">GAP Compiler</span>
+              </div>
+              <h1 id="h-auth" tabindex="-1">Log in</h1>
+
+              <div class="tabs" role="tablist" aria-label="Account" id="auth-tabs">
+                <button class="tab" role="tab" type="button" id="tab-login" aria-controls="panel-login" data-tab="login">Log in</button>
+                <button class="tab" role="tab" type="button" id="tab-signup" aria-controls="panel-signup" data-tab="signup">Sign up</button>
+              </div>
+
+              <div id="auth-notice" class="notice" role="status" hidden></div>
+
+              <!-- Log in -->
+              <form id="panel-login" class="stack" role="tabpanel" aria-labelledby="tab-login" novalidate>
+                <div class="field">
+                  <label for="login-id">Student ID</label>
+                  <input id="login-id" class="input mono" type="text" autocomplete="username" autocapitalize="characters" spellcheck="false" placeholder="GAP-123456" required>
+                  <p class="error" id="login-id-err" hidden></p>
+                </div>
+                <div class="field">
+                  <label for="login-pw">Password</label>
+                  <div class="pw">
+                    <input id="login-pw" class="input" type="password" autocomplete="current-password" required>
+                    <button class="icon-btn pw-toggle" type="button" data-toggle-pw="login-pw" aria-label="Show password" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg></button>
+                  </div>
+                  <p class="error" id="login-pw-err" hidden></p>
+                </div>
+                <label class="check">
+                  <input type="checkbox" id="login-shared" checked>
+                  <span>This is a shared or school computer<small>Sign out automatically after 20 minutes of inactivity.</small></span>
+                </label>
+                <p class="error form-error" id="login-form-err" role="alert" hidden></p>
+                <button class="btn btn-primary btn-block" type="submit" id="btn-login">Log in</button>
+                <p class="auth-links">
+                  <a href="#/forgot">Forgot password?</a>
+                  <span>New here? <a href="#/signup">Create an account</a></span>
+                </p>
+              </form>
+
+              <!-- Sign up -->
+              <form id="panel-signup" class="stack" role="tabpanel" aria-labelledby="tab-signup" novalidate hidden>
+                <div class="field">
+                  <label for="su-name">Full name</label>
+                  <input id="su-name" class="input" type="text" autocomplete="name" maxlength="60" required>
+                  <p class="error" id="su-name-err" hidden></p>
+                </div>
+                <div class="field">
+                  <label for="su-mobile">Mobile number</label>
+                  <input id="su-mobile" class="input mono" type="tel" inputmode="tel" autocomplete="tel" placeholder="9876543210" required aria-describedby="su-mobile-hint">
+                  <p class="hint" id="su-mobile-hint">Used only to recover your password. No messages are sent to it.</p>
+                  <p class="error" id="su-mobile-err" hidden></p>
+                </div>
+                <div class="field">
+                  <label for="su-pw">Password</label>
+                  <div class="pw">
+                    <input id="su-pw" class="input" type="password" autocomplete="new-password" minlength="8" required aria-describedby="su-pw-hint">
+                    <button class="icon-btn pw-toggle" type="button" data-toggle-pw="su-pw" aria-label="Show password" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg></button>
+                  </div>
+                  <p class="hint" id="su-pw-hint">At least 8 characters.</p>
+                  <p class="error" id="su-pw-err" hidden></p>
+                </div>
+                <div class="field">
+                  <label for="su-pw2">Confirm password</label>
+                  <div class="pw">
+                    <input id="su-pw2" class="input" type="password" autocomplete="new-password" required>
+                    <button class="icon-btn pw-toggle" type="button" data-toggle-pw="su-pw2" aria-label="Show password" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg></button>
+                  </div>
+                  <p class="error" id="su-pw2-err" hidden></p>
+                </div>
+                <p class="error form-error" id="su-form-err" role="alert" hidden></p>
+                <button class="btn btn-primary btn-block" type="submit" id="btn-signup">Create account</button>
+                <p class="auth-links"><span>Already registered? <a href="#/login">Log in</a></span></p>
+              </form>
+
+              <!-- Sign up done: show the generated Student ID -->
+              <div id="panel-welcome" class="stack" hidden>
+                <p>Your account is ready. This is your Student ID:</p>
+                <div class="id-card">
+                  <output id="welcome-id" class="id-value mono"></output>
+                  <button class="btn btn-secondary btn-sm" type="button" id="btn-copy-id"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg><span>Copy ID</span></button>
+                </div>
+                <p class="callout">Write this ID down or save it somewhere safe. You need it to log in and to reset your password. It cannot be looked up later.</p>
+                <button class="btn btn-primary btn-block" type="button" id="btn-welcome-continue">Continue to GAP Compiler</button>
+              </div>
+
+              <!-- Forgot password: step 1 -->
+              <form id="panel-forgot" class="stack" novalidate hidden>
+                <p class="lede-sm">Enter your Student ID and the mobile number you registered with. We check both against your account. No code is sent.</p>
+                <div class="field">
+                  <label for="fp-id">Student ID</label>
+                  <input id="fp-id" class="input mono" type="text" autocomplete="username" autocapitalize="characters" spellcheck="false" placeholder="GAP-123456" required>
+                </div>
+                <div class="field">
+                  <label for="fp-mobile">Registered mobile number</label>
+                  <input id="fp-mobile" class="input mono" type="tel" inputmode="tel" autocomplete="tel" required>
+                </div>
+                <p class="error form-error" id="fp-form-err" role="alert" hidden></p>
+                <button class="btn btn-primary btn-block" type="submit" id="btn-forgot">Verify details</button>
+                <p class="auth-links"><a href="#/login">Back to log in</a></p>
+              </form>
+
+              <!-- Forgot password: step 2 -->
+              <form id="panel-reset" class="stack" novalidate hidden>
+                <p class="lede-sm">Details verified. Choose a new password. You have 10 minutes to finish.</p>
+                <div class="field">
+                  <label for="rp-pw">New password</label>
+                  <div class="pw">
+                    <input id="rp-pw" class="input" type="password" autocomplete="new-password" minlength="8" required>
+                    <button class="icon-btn pw-toggle" type="button" data-toggle-pw="rp-pw" aria-label="Show password" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg></button>
+                  </div>
+                  <p class="hint">At least 8 characters.</p>
+                </div>
+                <div class="field">
+                  <label for="rp-pw2">Confirm new password</label>
+                  <div class="pw">
+                    <input id="rp-pw2" class="input" type="password" autocomplete="new-password" required>
+                    <button class="icon-btn pw-toggle" type="button" data-toggle-pw="rp-pw2" aria-label="Show password" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg></button>
+                  </div>
+                </div>
+                <p class="error form-error" id="rp-form-err" role="alert" hidden></p>
+                <button class="btn btn-primary btn-block" type="submit" id="btn-reset">Reset password</button>
+                <p class="auth-links"><a href="#/login">Cancel</a></p>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <!-- Shown when a route does not exist -->
+        <section class="view" id="view-missing" hidden aria-labelledby="h-missing">
+          <div class="empty">
+            <h1 id="h-missing">Page not found</h1>
+            <p>That page does not exist. Pick a section from the menu.</p>
+            <a class="btn btn-primary" href="#/playground">Open SQL Playground</a>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- ================= Dialogs ================= -->
+  <dialog id="dlg-query" aria-labelledby="dlg-query-title">
+    <form id="form-query" class="dialog-card" novalidate>
+      <header class="dialog-head">
+        <h2 id="dlg-query-title">Save query</h2>
+        <button class="icon-btn" type="button" data-close aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="dialog-body stack">
+        <input type="hidden" id="q-id">
+        <div class="field"><label for="q-title">Title</label><input id="q-title" class="input" type="text" maxlength="120" required></div>
+        <div class="field-row">
+          <div class="field"><label for="q-subject">Subject</label><input id="q-subject" class="input" type="text" maxlength="60" placeholder="e.g. Database Systems"></div>
+          <div class="field"><label for="q-tags">Tags</label><input id="q-tags" class="input" type="text" placeholder="joins, lab4"><p class="hint">Separate with commas.</p></div>
+        </div>
+        <div class="field"><label for="q-sql">SQL</label><textarea id="q-sql" class="textarea mono" rows="8" maxlength="50000" spellcheck="false" required></textarea></div>
+        <div class="field"><label for="q-notes">Notes <span class="optional">optional</span></label><textarea id="q-notes" class="textarea" rows="3" maxlength="1000"></textarea></div>
+        <p class="error form-error" id="q-err" role="alert" hidden></p>
+      </div>
+      <footer class="dialog-foot">
+        <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+        <button class="btn btn-primary" type="submit" id="q-submit">Save query</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-note" aria-labelledby="dlg-note-title">
+    <form id="form-note" class="dialog-card" novalidate>
+      <header class="dialog-head">
+        <h2 id="dlg-note-title">Add note</h2>
+        <button class="icon-btn" type="button" data-close aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="dialog-body stack">
+        <input type="hidden" id="n-id">
+        <div class="field"><label for="n-title">Title</label><input id="n-title" class="input" type="text" maxlength="120" required></div>
+        <div class="field-row">
+          <div class="field"><label for="n-subject">Subject</label><input id="n-subject" class="input" type="text" maxlength="60" placeholder="e.g. DBMS Theory"></div>
+          <div class="field"><label for="n-tags">Tags</label><input id="n-tags" class="input" type="text" placeholder="theory, normalization"><p class="hint">Separate with commas.</p></div>
+        </div>
+        <div class="field"><label for="n-content">Note</label><textarea id="n-content" class="textarea" rows="10" maxlength="20000" required></textarea></div>
+        <p class="error form-error" id="n-err" role="alert" hidden></p>
+      </div>
+      <footer class="dialog-foot">
+        <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+        <button class="btn btn-primary" type="submit" id="n-submit">Save note</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-post" aria-labelledby="dlg-post-title">
+    <form id="form-post" class="dialog-card" novalidate>
+      <header class="dialog-head">
+        <h2 id="dlg-post-title">Share with the class</h2>
+        <button class="icon-btn" type="button" data-close aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="dialog-body stack">
+        <fieldset class="segmented">
+          <legend class="sr-only">What are you posting?</legend>
+          <label><input type="radio" name="post-type" value="query" checked><span>Query</span></label>
+          <label><input type="radio" name="post-type" value="note"><span>Note</span></label>
+        </fieldset>
+        <p class="hint">Your name appears on the post. Only you can delete it.</p>
+        <div class="field"><label for="p-title">Title</label><input id="p-title" class="input" type="text" maxlength="120" required></div>
+        <div class="field-row">
+          <div class="field"><label for="p-subject">Subject</label><input id="p-subject" class="input" type="text" maxlength="60" placeholder="e.g. DBMS Lab"></div>
+          <div class="field"><label for="p-tags">Tags</label><input id="p-tags" class="input" type="text" placeholder="joins, lab4"><p class="hint">Separate with commas.</p></div>
+        </div>
+        <div class="field" id="p-sql-field"><label for="p-sql">SQL</label><textarea id="p-sql" class="textarea mono" rows="8" maxlength="50000" spellcheck="false"></textarea></div>
+        <div class="field" id="p-content-field" hidden><label for="p-content">Note</label><textarea id="p-content" class="textarea" rows="8" maxlength="20000"></textarea></div>
+        <div class="field"><label for="p-desc">Explanation <span class="optional">optional</span></label><textarea id="p-desc" class="textarea" rows="3" maxlength="1000" placeholder="What does it do, or what trick does it use?"></textarea></div>
+        <p class="error form-error" id="p-err" role="alert" hidden></p>
+      </div>
+      <footer class="dialog-foot">
+        <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+        <button class="btn btn-primary" type="submit" id="p-submit">Post to board</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-confirm" aria-labelledby="dlg-confirm-title" aria-describedby="dlg-confirm-msg">
+    <form method="dialog" class="dialog-card dialog-sm">
+      <header class="dialog-head"><h2 id="dlg-confirm-title">Are you sure?</h2></header>
+      <div class="dialog-body"><p id="dlg-confirm-msg"></p></div>
+      <footer class="dialog-foot">
+        <button class="btn btn-ghost" type="submit" value="cancel" id="confirm-cancel">Cancel</button>
+        <button class="btn btn-danger" type="submit" value="ok" id="confirm-ok">Delete</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+  <noscript><p class="noscript">GAP Compiler needs JavaScript to run SQL in your browser. Turn it on and reload.</p></noscript>
+
+  <script src="vendor/sql.js/sql-wasm.js"></script>
+  <script src="js/viva.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/sql-engine.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/playground.js"></script>
+  <script src="js/zone.js"></script>
+  <script src="js/share.js"></script>
+  <script src="js/board.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

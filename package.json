@@ -1,0 +1,24 @@
+{
+  "name": "gap-compiler",
+  "version": "1.0.0",
+  "description": "GAP Compiler: an SQL playground, personal workspace and class board for students.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "NODE_ENV=test node --test tests/*.test.js",
+    "backup": "node scripts/migrate.js backup",
+    "reset-accounts": "node scripts/migrate.js reset-accounts",
+    "clean-demo": "node scripts/migrate.js clean-demo",
+    "restore": "node scripts/migrate.js restore"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^5.2.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
