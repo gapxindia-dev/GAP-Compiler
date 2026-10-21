@@ -98,6 +98,7 @@ GAP.board = (() => {
         h('div', { class: 'card-actions' },
           isQuery ? btn('Try it', { cls: 'btn-primary btn-sm', ic: 'play', title: 'Open in SQL Playground and run', onclick: () => GAP.playground.load(p.sql) }) : null,
           btn('Save', { cls: 'btn-secondary btn-sm', ic: 'save', title: 'Save a copy to My Zone', onclick: () => saveCopy(p, isQuery) }),
+          p.mine ? btn('Edit', { cls: 'btn-ghost btn-sm', ic: 'edit', aria: `Edit your post ${p.title}`, onclick: () => editPost(p) }) : null,
           p.mine ? btn('Delete', { cls: 'btn-ghost btn-sm btn-outline-danger', ic: 'trash', aria: `Delete your post ${p.title}`, onclick: () => remove(p) }) : null)));
   }
 
@@ -131,19 +132,43 @@ GAP.board = (() => {
     }
   }
 
-  // ---------- posting ----------
+  // ---------- posting & editing ----------
   function setType(type) {
     $('#p-sql-field').hidden = type !== 'query';
     $('#p-content-field').hidden = type !== 'note';
-    $('#dlg-post-title').textContent = type === 'query' ? 'Share a query' : 'Add a note';
     for (const r of $$('input[name="post-type"]')) r.checked = r.value === type;
   }
 
   function openPost(type) {
     if (!api.isSignedIn()) { GAP.auth.require('#/board', 'Log in to post on the Class Board.'); return; }
     setType(type);
+    $('#p-id').value = '';
+    $('#dlg-post-title').textContent = type === 'query' ? 'Share a query' : 'Add a note';
+    $('#p-submit').textContent = 'Post to board';
     for (const id of ['p-title', 'p-subject', 'p-tags', 'p-content', 'p-desc']) $(`#${id}`).value = '';
-    $('#p-sql').value = type === 'query' ? ($('#sql-editor').value || '') : '';
+    const currentSql = (GAP.playground && GAP.playground.getSql) ? GAP.playground.getSql() : ($('#sql-editor').value || '');
+    $('#p-sql').value = type === 'query' ? currentSql : '';
+    setError($('#p-err'), '');
+    openDialog($('#dlg-post'));
+    setTimeout(() => $('#p-title').focus(), 0);
+  }
+
+  function editPost(p) {
+    if (!api.isSignedIn()) { GAP.auth.require('#/board', 'Log in to edit your post.'); return; }
+    if (!p.mine) { toast('Only the original author can edit this post.', 'error'); return; }
+    setType(p.type === 'note' ? 'note' : 'query');
+    $('#p-id').value = p.id;
+    $('#dlg-post-title').textContent = p.type === 'note' ? 'Edit note' : 'Edit query';
+    $('#p-title').value = p.title || '';
+    $('#p-subject').value = p.subject || '';
+    $('#p-tags').value = Array.isArray(p.tags) ? p.tags.join(', ') : (p.tags || '');
+    if (p.type === 'note') {
+      $('#p-content').value = p.content || '';
+    } else {
+      $('#p-sql').value = p.sql || '';
+    }
+    $('#p-desc').value = p.description || '';
+    $('#p-submit').textContent = 'Save changes';
     setError($('#p-err'), '');
     openDialog($('#dlg-post'));
     setTimeout(() => $('#p-title').focus(), 0);
@@ -151,6 +176,7 @@ GAP.board = (() => {
 
   async function submitPost(e) {
     e.preventDefault();
+    const postId = $('#p-id').value;
     const type = $('input[name="post-type"]:checked').value;
     const title = $('#p-title').value.trim();
     const sql = $('#p-sql').value.trim(), content = $('#p-content').value.trim();
@@ -159,12 +185,28 @@ GAP.board = (() => {
     if (type === 'query' && !sql) { setError(err, 'Add the SQL you want to share.'); $('#p-sql').focus(); return; }
     if (type === 'note' && !content) { setError(err, 'Write the note you want to share.'); $('#p-content').focus(); return; }
     setError(err, '');
-    await withBusy($('#p-submit'), 'Posting', async () => {
+    const busyText = postId ? 'Saving' : 'Posting';
+    await withBusy($('#p-submit'), busyText, async () => {
       try {
-        await api.post({ type, title, subject: $('#p-subject').value, tags: $('#p-tags').value, description: $('#p-desc').value, sql, content });
-        closeDialog($('#dlg-post'));
-        toast('Posted to the Class Board.', 'success');
-        filter.text = ''; filter.tag = ''; $('#board-search').value = '';
+        const payload = {
+          type,
+          title,
+          subject: $('#p-subject').value,
+          tags: $('#p-tags').value,
+          description: $('#p-desc').value,
+          sql,
+          content
+        };
+        if (postId) {
+          await api.editPost(postId, payload);
+          closeDialog($('#dlg-post'));
+          toast('Post updated.', 'success');
+        } else {
+          await api.post(payload);
+          closeDialog($('#dlg-post'));
+          toast('Posted to the Class Board.', 'success');
+          filter.text = ''; filter.tag = ''; $('#board-search').value = '';
+        }
         await show();
       } catch (e2) { setError(err, e2.message); }
     });

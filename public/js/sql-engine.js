@@ -258,6 +258,7 @@ GAP.sql = (() => {
     activeDbKey = key;
     if (activeDb) { try { activeDb.close(); } catch { /* already closed */ } }
     activeDb = new SQL.Database();
+    try { activeDb.run('PRAGMA foreign_keys = ON;'); } catch { /* ignore */ }
     if (datasets[key]) activeDb.run(datasets[key]);
   }
 
@@ -266,17 +267,45 @@ GAP.sql = (() => {
     const res = activeDb.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;");
     if (!res.length) return [];
     return res[0].values.map(([name]) => {
-      const cols = activeDb.exec(`PRAGMA table_info(${quoteIdent(name)});`);
-      const columns = cols.length ? cols[0].values.map((c) => ({ name: c[1], type: c[2] || '', pk: c[5] > 0 })) : [];
-      const count = activeDb.exec(`SELECT COUNT(*) FROM ${quoteIdent(name)};`);
-      return { name, columns, rowCount: count.length ? count[0].values[0][0] : 0 };
+      let columns = [];
+      try {
+        const cols = activeDb.exec(`PRAGMA table_info(${quoteIdent(name)});`);
+        // Foreign keys list
+        const fks = activeDb.exec(`PRAGMA foreign_key_list(${quoteIdent(name)});`);
+        const fkMap = {};
+        if (fks.length) {
+          for (const row of fks[0].values) {
+            fkMap[row[3]] = { targetTable: row[2], targetColumn: row[4] };
+          }
+        }
+        if (cols.length) {
+          columns = cols[0].values.map((c) => ({
+            name: c[1],
+            type: c[2] || 'TEXT',
+            notnull: c[3] > 0,
+            defaultValue: c[4],
+            pk: c[5] > 0,
+            fk: fkMap[c[1]] || null
+          }));
+        }
+      } catch { /* ignore */ }
+      let rowCount = 0;
+      try {
+        const count = activeDb.exec(`SELECT COUNT(*) FROM ${quoteIdent(name)};`);
+        rowCount = count.length ? count[0].values[0][0] : 0;
+      } catch { /* ignore */ }
+      return { name, columns, rowCount };
     });
   }
 
-  function previewRows(table, limit = 3) {
+  function previewRows(table, limit = 10) {
     if (!activeDb) return { columns: [], values: [] };
-    const res = activeDb.exec(`SELECT * FROM ${quoteIdent(table)} LIMIT ${Number(limit) | 0};`);
-    return res.length ? res[0] : { columns: [], values: [] };
+    try {
+      const res = activeDb.exec(`SELECT * FROM ${quoteIdent(table)} LIMIT ${Number(limit) | 0};`);
+      return res.length ? res[0] : { columns: [], values: [] };
+    } catch {
+      return { columns: [], values: [] };
+    }
   }
 
   function stripComments(sql) {
@@ -306,16 +335,17 @@ GAP.sql = (() => {
         const result = sets[sets.length - 1];
         return {
           success: true, kind: 'rows', columns: result.columns, values: result.values,
-          rowCount: result.values.length, resultSets: sets.length, execTimeMs
+          rowCount: result.values.length, resultSets: sets.length,
+          allSets: sets.map((s, idx) => ({ index: idx + 1, columns: s.columns, values: s.values, rowCount: s.values.length })),
+          execTimeMs
         };
       }
       if (/^(select|with|pragma|values|explain)\b/i.test(last)) {
         return { success: true, kind: 'empty', message: 'The query ran and returned 0 rows.', execTimeMs };
       }
-      // getRowsModified() reports the most recent INSERT/UPDATE/DELETE, so only quote it for those.
-      const singleDml = /^(insert|update|delete|replace)\b/i.test(stripComments(sql)) && !/;\s*\S/.test(stripComments(sql));
-      const message = singleDml
-        ? `Done. ${activeDb.getRowsModified()} row${activeDb.getRowsModified() === 1 ? '' : 's'} changed.`
+      const modified = activeDb.getRowsModified();
+      const message = modified > 0
+        ? `Done. ${modified} row${modified === 1 ? '' : 's'} affected.`
         : 'Done. The statement ran successfully.';
       return { success: true, kind: 'command', message, execTimeMs };
     } catch (err) {
@@ -329,13 +359,14 @@ GAP.sql = (() => {
   }
 
   function tipFor(message) {
-    if (/no such table/i.test(message)) return 'Check the table name against the Tables list, and make sure the right database is selected.';
-    if (/no such column/i.test(message)) return 'Check the column spelling. If the column is in a joined table, prefix it with the table alias, like s.gpa.';
-    if (/ambiguous column/i.test(message)) return 'More than one table has this column. Prefix it with a table alias, like s.student_id.';
-    if (/syntax error/i.test(message)) return 'Look near the quoted text for a missing comma, an unclosed quote or bracket, or a misspelled keyword.';
-    if (/UNIQUE constraint|PRIMARY KEY/i.test(message)) return 'A row with that key already exists. Use a different value or update the existing row.';
-    if (/FOREIGN KEY|NOT NULL constraint/i.test(message)) return 'The data breaks a table rule. Check required columns and referenced keys.';
-    if (/already exists/i.test(message)) return 'Use a different name, or add IF NOT EXISTS.';
+    if (/no such table/i.test(message)) return 'Check the table name in the Tables list on the right. Verify you have created the table or selected the right sample database.';
+    if (/no such column/i.test(message)) return 'Check column spelling. If referencing columns from multiple joined tables, qualify them with the table name or alias (e.g., students.student_id).';
+    if (/ambiguous column/i.test(message)) return 'More than one table in your query has this column name. Disambiguate by prefixing with the table alias (e.g. s.dept_id).';
+    if (/syntax error/i.test(message)) return 'SQL syntax error. Look near the quoted text for a missing comma, unclosed quote or parenthesis, or misspelled keyword.';
+    if (/UNIQUE constraint|PRIMARY KEY/i.test(message)) return 'A row with this primary or unique key already exists. Use a different value or update the existing row.';
+    if (/FOREIGN KEY constraint failed/i.test(message)) return 'Foreign key violation: The referenced parent record does not exist, or dependent records prevent deletion/update.';
+    if (/NOT NULL constraint/i.test(message)) return 'A column configured as NOT NULL was omitted or assigned NULL.';
+    if (/already exists/i.test(message)) return 'A database object with that name already exists. Use DROP TABLE IF EXISTS or choose a new name.';
     return '';
   }
 
@@ -369,8 +400,17 @@ GAP.sql = (() => {
     return [header, ...values.map((row) => row.map(cell).join(','))].join('\r\n');
   }
 
+  function getSchema() {
+    const tables = inspectTables();
+    const schema = {};
+    for (const t of tables) {
+      schema[t.name] = t.columns.map((c) => c.name);
+    }
+    return schema;
+  }
+
   return {
-    init, loadDatabase, inspectTables, previewRows, execute, formatSql, resultsToCsv,
+    init, loadDatabase, inspectTables, previewRows, execute, formatSql, resultsToCsv, getSchema,
     templatesFor: (key) => templates[key] || [],
     getActiveDbKey: () => activeDbKey,
     MAX_SQL_LENGTH

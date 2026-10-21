@@ -10,6 +10,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="vendor/codemirror/codemirror.css">
+  <link rel="stylesheet" href="vendor/codemirror/show-hint.css">
   <link rel="stylesheet" href="css/app.css">
   <script src="js/theme-init.js"></script>
 </head>
@@ -44,6 +46,9 @@
       <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></symbol>
       <symbol id="i-reset" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></symbol>
       <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+      <symbol id="i-key" viewBox="0 0 24 24"><path d="m21 2-2 2m-1.5 1.5L14 9a6 6 0 1 0 3 3l3.5-3.5V6h2.5V3.5L21 2z"/><circle cx="8" cy="16" r="2"/></symbol>
+      <symbol id="i-chevron-down" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></symbol>
+      <symbol id="i-chevron-right" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></symbol>
     </defs>
   </svg>
 
@@ -62,7 +67,6 @@
         <a href="#/zone" data-route="zone"><svg class="icon" aria-hidden="true"><use href="#i-zone"/></svg><span>My Zone</span><span class="count" id="zone-count" hidden></span></a>
         <a href="#/share" data-route="share"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg><span>Quick Share</span></a>
         <a href="#/board" data-route="board"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Class Board</span></a>
-        <a href="#/viva" data-route="viva"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg><span>Viva</span></a>
       </nav>
 
       <div class="rail-foot">
@@ -126,8 +130,8 @@
                 </div>
               </div>
 
-              <div class="editor">
-                <div class="gutter" id="gutter" aria-hidden="true">1</div>
+              <div class="editor" id="editor-wrap">
+                <div class="gutter" id="gutter" aria-hidden="true" hidden>1</div>
                 <label class="sr-only" for="sql-editor">SQL editor</label>
                 <textarea id="sql-editor" spellcheck="false" autocapitalize="off" autocomplete="off" maxlength="50000" placeholder="Write SQL here, then press Run or Ctrl+Enter.&#10;&#10;Try: SELECT * FROM students;"></textarea>
               </div>
@@ -151,8 +155,17 @@
 
             <aside class="pg-side" aria-label="Database tables">
               <div class="side-head">
-                <h2>Tables</h2>
-                <span class="pill" id="table-count">0</span>
+                <div class="side-title-group">
+                  <h2>Tables</h2>
+                  <span class="pill" id="table-count">0</span>
+                </div>
+                <button class="icon-btn" type="button" id="btn-refresh-tables" title="Refresh tables from database" aria-label="Refresh tables">
+                  <svg class="icon" aria-hidden="true"><use href="#i-reset"/></svg>
+                </button>
+              </div>
+              <div class="tbl-search-wrap">
+                <svg class="icon search-icon" aria-hidden="true"><use href="#i-search"/></svg>
+                <input type="search" id="table-search" class="input input-sm tbl-search-input" placeholder="Search tables &amp; columns..." aria-label="Search tables and columns" autocomplete="off">
               </div>
               <div id="table-list" class="table-list"></div>
               <div class="templates">
@@ -240,17 +253,6 @@
           <div id="board-body"></div>
         </section>
 
-        <!-- ================= Viva ================= -->
-        <section class="view" id="view-viva" hidden aria-labelledby="h-viva">
-          <div class="page-head">
-            <div>
-              <h1 id="h-viva">Viva</h1>
-              <p class="lede">Questions examiners often ask in DBMS lab vivas. Open a question to see a short answer.</p>
-            </div>
-          </div>
-          <div id="viva-list" class="viva-list"></div>
-        </section>
-
         <!-- ================= Account: log in / sign up / forgot ================= -->
         <section class="view" id="view-auth" hidden aria-labelledby="h-auth">
           <div class="auth-wrap">
@@ -272,7 +274,7 @@
               <form id="panel-login" class="stack" role="tabpanel" aria-labelledby="tab-login" novalidate>
                 <div class="field">
                   <label for="login-id">Student ID</label>
-                  <input id="login-id" class="input mono" type="text" autocomplete="username" autocapitalize="characters" spellcheck="false" placeholder="GAP-123456" required>
+                  <input id="login-id" class="input mono" type="text" autocomplete="username" autocapitalize="characters" spellcheck="false" placeholder="e.g. ANUB0001" required>
                   <p class="error" id="login-id-err" hidden></p>
                 </div>
                 <div class="field">
@@ -305,8 +307,18 @@
                 <div class="field">
                   <label for="su-mobile">Mobile number</label>
                   <input id="su-mobile" class="input mono" type="tel" inputmode="tel" autocomplete="tel" placeholder="9876543210" required aria-describedby="su-mobile-hint">
-                  <p class="hint" id="su-mobile-hint">Used only to recover your password. No messages are sent to it.</p>
+                  <p class="hint" id="su-mobile-hint">Your mobile number is collected only for password recovery.</p>
                   <p class="error" id="su-mobile-err" hidden></p>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="su-class">Class / Batch <span class="optional">optional</span></label>
+                    <input id="su-class" class="input" type="text" maxlength="40" placeholder="e.g. 2nd Year CS, BCA">
+                  </div>
+                  <div class="field">
+                    <label for="su-year">Academic Year <span class="optional">optional</span></label>
+                    <input id="su-year" class="input mono" type="text" maxlength="20" placeholder="2026-2027">
+                  </div>
                 </div>
                 <div class="field">
                   <label for="su-pw">Password</label>
@@ -346,7 +358,7 @@
                 <p class="lede-sm">Enter your Student ID and the mobile number you registered with. We check both against your account. No code is sent.</p>
                 <div class="field">
                   <label for="fp-id">Student ID</label>
-                  <input id="fp-id" class="input mono" type="text" autocomplete="username" autocapitalize="characters" spellcheck="false" placeholder="GAP-123456" required>
+                  <input id="fp-id" class="input mono" type="text" autocomplete="username" autocapitalize="characters" spellcheck="false" placeholder="e.g. ANUB0001" required>
                 </div>
                 <div class="field">
                   <label for="fp-mobile">Registered mobile number</label>
@@ -450,12 +462,13 @@
         <button class="icon-btn" type="button" data-close aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
       </header>
       <div class="dialog-body stack">
+        <input type="hidden" id="p-id">
         <fieldset class="segmented">
           <legend class="sr-only">What are you posting?</legend>
           <label><input type="radio" name="post-type" value="query" checked><span>Query</span></label>
           <label><input type="radio" name="post-type" value="note"><span>Note</span></label>
         </fieldset>
-        <p class="hint">Your name appears on the post. Only you can delete it.</p>
+        <p class="hint">Your name appears on the post. Only you can edit or delete it.</p>
         <div class="field"><label for="p-title">Title</label><input id="p-title" class="input" type="text" maxlength="120" required></div>
         <div class="field-row">
           <div class="field"><label for="p-subject">Subject</label><input id="p-subject" class="input" type="text" maxlength="60" placeholder="e.g. DBMS Lab"></div>
@@ -473,6 +486,90 @@
     </form>
   </dialog>
 
+  <!-- Admin / Academic Year Management Dialog -->
+  <dialog id="dlg-admin" aria-labelledby="dlg-admin-title">
+    <div class="dialog-card dialog-lg">
+      <header class="dialog-head">
+        <h2 id="dlg-admin-title">Academic Year &amp; Administration</h2>
+        <button class="icon-btn" type="button" data-close aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="dialog-body stack">
+        <div id="admin-auth-box" class="stack" hidden>
+          <p class="lede-sm">Sign in with an Administrator account or enter the server admin key to access this dashboard.</p>
+          <div class="field">
+            <label for="admin-key-input">Admin Key</label>
+            <input type="password" id="admin-key-input" class="input" placeholder="Enter Admin Secret / Key">
+          </div>
+          <button class="btn btn-primary" type="button" id="btn-admin-unlock">Unlock Dashboard</button>
+        </div>
+
+        <div id="admin-main-box" class="stack">
+          <!-- Overview Cards -->
+          <div class="admin-stats-grid">
+            <div class="stat-card">
+              <span class="stat-label">Current Academic Year</span>
+              <strong class="stat-val" id="adm-cur-year">2026-2027</strong>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Total Student Accounts</span>
+              <strong class="stat-val" id="adm-total-students">0</strong>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Active Students</span>
+              <strong class="stat-val" style="color: var(--accent);" id="adm-active-students">0</strong>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Alumni Accounts</span>
+              <strong class="stat-val" id="adm-alumni-students">0</strong>
+            </div>
+          </div>
+
+          <!-- Advance Academic Year Form -->
+          <div class="panel-section">
+            <h3 class="panel-title">Advance Academic Year</h3>
+            <p class="hint">Support upcoming batches without resetting accounts. All login IDs, saved queries, and Class Board posts are permanently preserved.</p>
+            <div class="field-row">
+              <div class="field">
+                <label for="adm-new-year">New Academic Year</label>
+                <input type="text" id="adm-new-year" class="input mono" placeholder="e.g. 2027-2028">
+              </div>
+              <div class="field">
+                <label for="adm-target-class">Graduating Class <span class="optional">graduate to Alumni</span></label>
+                <input type="text" id="adm-target-class" class="input" placeholder="e.g. 4th Year CS">
+              </div>
+            </div>
+            <button class="btn btn-primary btn-sm" type="button" id="btn-adm-advance">Advance Year</button>
+          </div>
+
+          <!-- Student Accounts Directory -->
+          <div class="panel-section">
+            <h3 class="panel-title">Student Directory &amp; Status</h3>
+            <div class="table-wrap" style="max-height: 240px; overflow-y: auto;">
+              <table class="data" id="adm-students-table">
+                <thead>
+                  <tr>
+                    <th>Login ID</th>
+                    <th>Name</th>
+                    <th>Class</th>
+                    <th>Academic Year</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="adm-students-list">
+                  <tr><td colspan="6" class="side-empty">Loading student records...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <footer class="dialog-foot">
+        <button class="btn btn-ghost" type="button" data-close>Close</button>
+      </footer>
+    </div>
+  </dialog>
+
   <dialog id="dlg-confirm" aria-labelledby="dlg-confirm-title" aria-describedby="dlg-confirm-msg">
     <form method="dialog" class="dialog-card dialog-sm">
       <header class="dialog-head"><h2 id="dlg-confirm-title">Are you sure?</h2></header>
@@ -488,7 +585,13 @@
   <noscript><p class="noscript">GAP Compiler needs JavaScript to run SQL in your browser. Turn it on and reload.</p></noscript>
 
   <script src="vendor/sql.js/sql-wasm.js"></script>
-  <script src="js/viva.js"></script>
+  <script src="vendor/codemirror/codemirror.js"></script>
+  <script src="vendor/codemirror/sql.js"></script>
+  <script src="vendor/codemirror/show-hint.js"></script>
+  <script src="vendor/codemirror/sql-hint.js"></script>
+  <script src="vendor/codemirror/matchbrackets.js"></script>
+  <script src="vendor/codemirror/closebrackets.js"></script>
+  <script src="vendor/codemirror/active-line.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/api.js"></script>
   <script src="js/sql-engine.js"></script>

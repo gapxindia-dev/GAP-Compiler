@@ -41,8 +41,8 @@ GAP.api = (() => {
     if (had) events.dispatchEvent(Object.assign(new Event('change'), { reason }));
   }
 
-  async function request(method, url, body) {
-    const headers = {};
+  async function request(method, url, body, extraHeaders = {}) {
+    const headers = { ...extraHeaders };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (session) headers.Authorization = `Bearer ${session.token}`;
     let res;
@@ -110,7 +110,14 @@ GAP.api = (() => {
 
     getBoard: (params) => request('GET', `/api/community${qs(params || {})}`),
     post: (b) => request('POST', '/api/community', b),
+    editPost: (id, b) => request('PUT', `/api/community/${id}`, b),
     deletePost: (id) => request('DELETE', `/api/community/${id}`),
-    toggleLike: (id) => request('POST', `/api/community/${id}/like`)
+    toggleLike: (id) => request('POST', `/api/community/${id}/like`),
+
+    getCurrentAcademicYear: () => request('GET', '/api/academic-year/current'),
+    getAdminOverview: (key) => request('GET', '/api/admin/overview', undefined, key ? { 'X-Admin-Key': key } : {}),
+    advanceAcademicYear: (b, key) => request('POST', '/api/admin/academic-year/advance', b, key ? { 'X-Admin-Key': key } : {}),
+    getAdminStudents: (key) => request('GET', '/api/admin/students', undefined, key ? { 'X-Admin-Key': key } : {}),
+    updateStudent: (id, b, key) => request('PUT', `/api/admin/students/${id}`, b, key ? { 'X-Admin-Key': key } : {})
   };
 })();

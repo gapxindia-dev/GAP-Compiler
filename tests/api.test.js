@@ -29,13 +29,14 @@ before(async () => {
 });
 after(() => { server.close(); fs.rmSync(dir, { recursive: true, force: true }); });
 
-async function api(method, url, { token, body, ip } = {}) {
+async function api(method, url, { token, body, ip, headers } = {}) {
   const res = await fetch(base + url, {
     method,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(ip ? { 'X-Forwarded-For': ip } : {})
+      ...(ip ? { 'X-Forwarded-For': ip } : {}),
+      ...(headers || {})
     },
     body: body ? JSON.stringify(body) : undefined
   });
@@ -45,12 +46,15 @@ async function api(method, url, { token, body, ip } = {}) {
 }
 let ipCounter = 10;
 const freshIp = () => `10.0.0.${++ipCounter}`;
+let mobileCounter = 9876500000;
+const freshMobile = () => String(++mobileCounter);
 const PW = 'correct horse 42';
 
-async function signUp(name, mobile = '9876543210', password = PW) {
-  const r = await api('POST', '/api/auth/register', { ip: freshIp(), body: { fullName: name, mobile, password, confirmPassword: password } });
+async function signUp(name, mobile, password = PW) {
+  const m = mobile || freshMobile();
+  const r = await api('POST', '/api/auth/register', { ip: freshIp(), body: { fullName: name, mobile: m, password, confirmPassword: password } });
   assert.equal(r.status, 201, JSON.stringify(r.data));
-  return { token: r.data.token, id: r.data.student.studentId, mobile, name };
+  return { token: r.data.token, id: r.data.student.studentId, mobile: m, name };
 }
 
 test('migration: demo posts removed, genuine post and legacy file kept, backup taken', () => {
@@ -78,7 +82,7 @@ test('student IDs are unique and well-formed; passwords are hashed', async () =>
   const ids = new Set();
   for (let i = 0; i < 12; i++) ids.add((await signUp(`Student ${i}`)).id);
   assert.equal(ids.size, 12);
-  for (const id of ids) assert.match(id, /^GAP-\d{6}$/);
+  for (const id of ids) assert.match(id, /^STUD\d{4,}$/);
   const raw = fs.readFileSync(path.join(dir, 'users.json'), 'utf8');
   assert.ok(!raw.includes(PW), 'plaintext password must never be stored');
   assert.match(raw, /scrypt\$/);
@@ -246,4 +250,101 @@ test('unknown API paths return JSON 404, not the app shell', async () => {
   const r = await fetch(base + '/api/nope');
   assert.equal(r.status, 404);
   assert.match(r.headers.get('content-type'), /json/);
+});
+
+test('Student ID format: name prefix + 4-digit serial, handles short names and duplicate names', async () => {
+  // Test specific examples from prompt table
+  const u1 = await signUp('Anubhav');
+  const u2 = await signUp('Rahul');
+  const u3 = await signUp('Sai');
+  const u4 = await signUp('Om');
+  const u5 = await signUp('Aarav Sharma');
+
+  assert.match(u1.id, /^ANUB\d{4}$/);
+  assert.match(u2.id, /^RAHU\d{4}$/);
+  assert.match(u3.id, /^SAI\d{4}$/, 'Sai has 3 chars, used without padding');
+  assert.match(u4.id, /^OM\d{4}$/, 'Om has 2 chars, used without padding');
+  assert.match(u5.id, /^AARA\d{4}$/, 'Aarav Sharma uses first 4 chars of Aarav');
+
+  // Duplicate name receives different serial
+  const u1Second = await signUp('Anubhav');
+  assert.match(u1Second.id, /^ANUB\d{4}$/);
+  assert.notEqual(u1.id, u1Second.id, 'Students with identical names get different serial numbers');
+
+  // IDs must be permanent and allow login
+  const loginRes = await api('POST', '/api/auth/login', { ip: freshIp(), body: { studentId: u1.id, password: PW } });
+  assert.equal(loginRes.status, 200);
+  assert.equal(loginRes.data.student.studentId, u1.id);
+});
+
+test('Duplicate mobile registration is rejected', async () => {
+  const mobile = freshMobile();
+  const reg1 = await api('POST', '/api/auth/register', { ip: freshIp(), body: { fullName: 'First Student', mobile, password: PW, confirmPassword: PW } });
+  assert.equal(reg1.status, 201);
+
+  const reg2 = await api('POST', '/api/auth/register', { ip: freshIp(), body: { fullName: 'Second Student', mobile, password: PW, confirmPassword: PW } });
+  assert.equal(reg2.status, 409, 'Duplicate mobile number registration must be rejected');
+});
+
+test('Class Board: original uploader can edit post; others cannot', async () => {
+  const author = await signUp('Author User');
+  const other = await signUp('Other User');
+
+  const post = await api('POST', '/api/community', { token: author.token, body: { title: 'Initial Title', sql: 'SELECT 1;', subject: 'SQL' } });
+  assert.equal(post.status, 201);
+  const postId = post.data.item.id;
+
+  // Unauthenticated cannot edit
+  const noAuth = await api('PUT', `/api/community/${postId}`, { body: { title: 'Hacked', sql: 'SELECT 2;' } });
+  assert.equal(noAuth.status, 401);
+
+  // Other user cannot edit
+  const hack = await api('PUT', `/api/community/${postId}`, { token: other.token, body: { title: 'Hacked', sql: 'SELECT 2;' } });
+  assert.equal(hack.status, 403);
+
+  // Author CAN edit
+  const edited = await api('PUT', `/api/community/${postId}`, { token: author.token, body: { title: 'Updated Title', sql: 'SELECT 100;', subject: 'Advanced SQL' } });
+  assert.equal(edited.status, 200);
+  assert.equal(edited.data.item.title, 'Updated Title');
+  assert.equal(edited.data.item.sql, 'SELECT 100;');
+});
+
+test('Academic Year Management: advance year, preserve accounts and queries, account status deactivation', async () => {
+  const admin = await signUp('Administrator');
+  const adminKey = process.env.ADMIN_KEY || process.env.SESSION_SECRET;
+  const adminHeaders = { 'X-Admin-Key': adminKey };
+
+  const current = await api('GET', '/api/academic-year/current');
+  assert.equal(current.status, 200);
+  assert.ok(current.data.academicYear);
+
+  const overview = await api('GET', '/api/admin/overview', { token: admin.token, headers: adminHeaders });
+  assert.equal(overview.status, 200);
+  assert.ok(overview.data.totalStudents >= 1);
+
+  // Advance academic year
+  const adv = await api('POST', '/api/admin/academic-year/advance', {
+    token: admin.token,
+    headers: adminHeaders,
+    body: { newAcademicYear: '2027-2028' }
+  });
+  assert.equal(adv.status, 200);
+  assert.equal(adv.data.academicYear, '2027-2028');
+
+  // Verify accounts are preserved and can still sign in
+  const checkLogin = await api('POST', '/api/auth/login', { ip: freshIp(), body: { studentId: admin.id, password: PW } });
+  assert.equal(checkLogin.status, 200);
+
+  // Deactivate account
+  const deact = await api('PUT', `/api/admin/students/${admin.id}`, {
+    token: admin.token,
+    headers: adminHeaders,
+    body: { status: 'deactivated' }
+  });
+  assert.equal(deact.status, 200);
+  assert.equal(deact.data.student.status, 'deactivated');
+
+  // Deactivated user cannot log in
+  const blockedLogin = await api('POST', '/api/auth/login', { ip: freshIp(), body: { studentId: admin.id, password: PW } });
+  assert.equal(blockedLogin.status, 403);
 });

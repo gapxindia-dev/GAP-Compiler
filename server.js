@@ -127,7 +127,14 @@ function issueSession(user, shared) {
   return signToken({ typ: 'session', sid: user.studentId, tv: user.tokenVersion, exp: Date.now() + ttl });
 }
 
-const publicUser = (user) => ({ studentId: user.studentId, fullName: user.fullName });
+const publicUser = (user) => ({
+  studentId: user.studentId,
+  fullName: user.fullName,
+  academicYear: user.academicYear || '2026-2027',
+  class: user.class || 'General',
+  status: user.status || 'active',
+  role: user.role || 'student'
+});
 
 function authFromRequest(req) {
   const header = req.headers.authorization || '';
@@ -145,6 +152,19 @@ function requireAuth(req, res, next) {
   if (!user) return next(new HttpError(401, 'Your session has expired. Sign in again.', { code: 'AUTH_REQUIRED' }));
   req.user = user;
   next();
+}
+
+function requireAdmin(req, res, next) {
+  const adminKey = req.headers['x-admin-key'];
+  if (adminKey && sec.safeEqual(adminKey, process.env.ADMIN_KEY || SECRET)) {
+    return next();
+  }
+  const user = authFromRequest(req);
+  if (user && user.role === 'admin') {
+    req.user = user;
+    return next();
+  }
+  return next(new HttpError(403, 'Administrator access required.'));
 }
 
 function optionalAuth(req, res, next) {
@@ -196,18 +216,44 @@ app.get('/healthz', (req, res) => res.json({ ok: true }));
 // locked out by many successful sign-ins.
 app.post('/api/auth/register', wrap(async (req, res) => {
   limit(`register:${req.ip}`, 60, 3600_000, 'Too many sign-ups from this network. Try again later.');
-  const { fullName, mobile, password, confirmPassword } = req.body || {};
+  const { fullName, mobile, password, confirmPassword, academicYear, studentClass } = req.body || {};
   const name = cleanText(fullName, { ...LIMITS.name, min: LIMITS.name.min, label: 'Full name' });
   const mobileNorm = sec.normalizeMobile(mobile);
   if (!mobileNorm) throw new HttpError(400, 'Enter a valid mobile number (10 to 15 digits).', { field: 'mobile' });
   checkPassword(password, confirmPassword);
 
+  const existingUsers = store.get('users') || {};
+  const duplicate = Object.values(existingUsers).find((u) => u.mobile === mobileNorm && u.status !== 'deactivated');
+  if (duplicate) {
+    throw new HttpError(409, 'An account with this mobile number already exists. Sign in or use Forgot Password.', { field: 'mobile' });
+  }
+
+  const prefix = sec.extractNamePrefix(name);
   const passwordHash = await sec.hashPassword(password);
   const user = store.mutate('users', (users) => {
-    // Uniqueness is checked in the same synchronous step that inserts the record.
-    const studentId = sec.generateId('GAP', 6, (id) => Object.hasOwn(users, id));
+    let studentId;
+    store.mutate('meta', (meta) => {
+      let serial = typeof meta.nextStudentSerial === 'number' ? meta.nextStudentSerial : 1;
+      while (true) {
+        const candidate = sec.formatStudentId(prefix, serial);
+        serial++;
+        if (!Object.hasOwn(users, candidate)) {
+          studentId = candidate;
+          break;
+        }
+      }
+      meta.nextStudentSerial = serial;
+    });
+
+    const meta = store.get('meta') || {};
+    const curYear = meta.academicYear || '2026-2027';
+    const assignedYear = typeof academicYear === 'string' && academicYear.trim() ? academicYear.trim() : curYear;
+    const assignedClass = typeof studentClass === 'string' && studentClass.trim() ? studentClass.trim() : 'General';
+
     const record = {
       studentId, fullName: name, mobile: mobileNorm, passwordHash,
+      academicYear: assignedYear, class: assignedClass, status: 'active',
+      role: Object.keys(users).length === 0 ? 'admin' : 'student',
       tokenVersion: 1, createdAt: now(), lastLoginAt: now()
     };
     users[studentId] = record;
@@ -230,6 +276,9 @@ app.post('/api/auth/login', wrap(async (req, res) => {
 
   const users = store.get('users');
   const user = Object.hasOwn(users, id) ? users[id] : null;
+  if (user && user.status === 'deactivated') {
+    throw new HttpError(403, 'This account has been deactivated. Contact your administrator.');
+  }
   const ok = await sec.verifyPassword(password, user ? user.passwordHash : (DUMMY_HASH || 'x'));
   if (!user || !ok) {
     limiter.fail(idKey, 15 * 60_000);
@@ -263,6 +312,9 @@ app.post('/api/auth/recover/verify', wrap(async (req, res) => {
 
   const users = store.get('users');
   const user = Object.hasOwn(users, id) ? users[id] : null;
+  if (user && user.status === 'deactivated') {
+    throw new HttpError(403, 'This account has been deactivated. Contact your administrator.');
+  }
   // Always compare, even for unknown IDs, so timing does not reveal which IDs exist.
   const matches = sec.safeEqual(user ? user.mobile : '0000000000', mobileNorm) && !!user;
   if (!matches) {
@@ -533,6 +585,33 @@ app.delete('/api/community/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+app.put('/api/community/:id', requireAuth, wrap(async (req, res) => {
+  const post = store.get('community').find((p) => p.id === req.params.id);
+  if (!post) throw new HttpError(404, 'Post not found.');
+  if (!post.ownerId || post.ownerId !== req.user.studentId) {
+    throw new HttpError(403, 'You can only edit your own posts.');
+  }
+  const body = req.body || {};
+  const type = post.type;
+  const updated = store.mutate('community', (list) => {
+    const idx = list.findIndex((p) => p.id === req.params.id && p.ownerId === req.user.studentId);
+    if (idx < 0) throw new HttpError(404, 'Post not found.');
+    const p = list[idx];
+    p.title = cleanText(body.title, { ...LIMITS.title, label: 'Title' });
+    p.description = cleanText(body.description, { max: LIMITS.description.max, label: 'Description' });
+    p.subject = cleanText(body.subject, { max: LIMITS.subject.max, label: 'Subject' }) || 'General';
+    p.tags = cleanTags(body.tags);
+    if (type === 'query') {
+      p.sql = cleanText(body.sql, { max: LIMITS.sql.max, min: 1, label: 'SQL' });
+    } else {
+      p.content = cleanText(body.content, { max: LIMITS.note.max, min: 1, label: 'Note' });
+    }
+    p.updatedAt = now();
+    return p;
+  });
+  res.json({ item: postView(updated, req.user) });
+}));
+
 app.post('/api/community/:id/like', requireAuth, (req, res) => {
   const result = store.mutate('community', (list) => {
     const post = list.find((p) => p.id === req.params.id);
@@ -545,6 +624,101 @@ app.post('/api/community/:id/like', requireAuth, (req, res) => {
   });
   res.json(result);
 });
+
+// ---------------------------------------------------------------- Academic Year & Admin
+app.get('/api/academic-year/current', (req, res) => {
+  const meta = store.get('meta') || {};
+  res.json({
+    academicYear: meta.academicYear || '2026-2027',
+    availableClasses: ['1st Year CS', '2nd Year CS', '3rd Year CS', '4th Year CS', 'MCA', 'BCA', 'General']
+  });
+});
+
+app.get('/api/admin/overview', requireAdmin, (req, res) => {
+  const meta = store.get('meta') || {};
+  const users = Object.values(store.get('users') || {});
+  const stats = {
+    academicYear: meta.academicYear || '2026-2027',
+    nextStudentSerial: meta.nextStudentSerial || 1,
+    totalStudents: users.length,
+    activeStudents: users.filter((u) => u.status === 'active').length,
+    alumniStudents: users.filter((u) => u.status === 'alumni').length,
+    deactivatedStudents: users.filter((u) => u.status === 'deactivated').length,
+    byAcademicYear: {},
+    byClass: {}
+  };
+  for (const u of users) {
+    const y = u.academicYear || 'Unknown';
+    const c = u.class || 'General';
+    stats.byAcademicYear[y] = (stats.byAcademicYear[y] || 0) + 1;
+    stats.byClass[c] = (stats.byClass[c] || 0) + 1;
+  }
+  res.json(stats);
+});
+
+app.post('/api/admin/academic-year/advance', requireAdmin, wrap(async (req, res) => {
+  const { newAcademicYear, graduateFinalYear, targetClass, newClass } = req.body || {};
+  if (!newAcademicYear || typeof newAcademicYear !== 'string' || !newAcademicYear.trim()) {
+    throw new HttpError(400, 'Enter the new academic year (e.g. 2027-2028).');
+  }
+  const yr = newAcademicYear.trim();
+  store.mutate('meta', (m) => {
+    m.academicYear = yr;
+    m.academicYearHistory = m.academicYearHistory || [];
+    if (!m.academicYearHistory.includes(yr)) m.academicYearHistory.push(yr);
+  });
+
+  if (graduateFinalYear && targetClass) {
+    store.mutate('users', (users) => {
+      for (const u of Object.values(users)) {
+        if (u.class === targetClass && u.status === 'active') {
+          u.status = 'alumni';
+        }
+      }
+    });
+  } else if (newClass && targetClass) {
+    store.mutate('users', (users) => {
+      for (const u of Object.values(users)) {
+        if (u.class === targetClass && u.status === 'active') {
+          u.class = newClass;
+        }
+      }
+    });
+  }
+  log.info(`[admin] advanced academic year to ${yr}`);
+  res.json({ message: `Academic year successfully advanced to ${yr}.`, academicYear: yr });
+}));
+
+app.get('/api/admin/students', requireAdmin, (req, res) => {
+  const users = Object.values(store.get('users') || {}).map((u) => ({
+    studentId: u.studentId,
+    fullName: u.fullName,
+    mobile: u.mobile,
+    academicYear: u.academicYear || '2026-2027',
+    class: u.class || 'General',
+    status: u.status || 'active',
+    role: u.role || 'student',
+    createdAt: u.createdAt,
+    lastLoginAt: u.lastLoginAt
+  }));
+  res.json({ students: users });
+});
+
+app.put('/api/admin/students/:id', requireAdmin, wrap(async (req, res) => {
+  const id = sec.normalizeStudentId(req.params.id);
+  const { status, studentClass, academicYear, role } = req.body || {};
+  const updated = store.mutate('users', (users) => {
+    const u = users[id];
+    if (!u) throw new HttpError(404, 'Student not found.');
+    if (status && ['active', 'alumni', 'deactivated'].includes(status)) u.status = status;
+    if (typeof studentClass === 'string' && studentClass.trim()) u.class = studentClass.trim();
+    if (typeof academicYear === 'string' && academicYear.trim()) u.academicYear = academicYear.trim();
+    if (role && ['student', 'admin'].includes(role)) u.role = role;
+    return u;
+  });
+  log.info(`[admin] updated student ${id}`);
+  res.json({ student: publicUser(updated) });
+}));
 
 // ---------------------------------------------------------------- static + errors
 app.use('/api', (req, res, next) => next(new HttpError(404, 'Not found.')));

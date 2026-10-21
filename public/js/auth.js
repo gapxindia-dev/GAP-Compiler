@@ -93,10 +93,18 @@ GAP.auth = (() => {
 
     await withBusy($('#btn-signup'), 'Creating account', async () => {
       try {
+        const uClass = $('#su-class');
+        const uYear = $('#su-year');
         const res = await api.register({
-          fullName: name.value.trim(), mobile: mobile.value.trim(), password: pw.value, confirmPassword: pw2.value
+          fullName: name.value.trim(),
+          mobile: mobile.value.trim(),
+          password: pw.value,
+          confirmPassword: pw2.value,
+          studentClass: uClass ? uClass.value.trim() : '',
+          academicYear: uYear ? uYear.value.trim() : ''
         });
         for (const i of [pw, pw2, mobile, name]) i.value = '';
+        if (uClass) uClass.value = '';
         $('#welcome-id').textContent = res.student.studentId;
         show('welcome'); // before setSession so the router does not redirect away
         api.setSession(res.token, res.student, true);
@@ -158,6 +166,98 @@ GAP.auth = (() => {
     });
   }
 
+  // ---------- admin panel ----------
+  let adminAuthKey = '';
+
+  async function openAdminDialog() {
+    const dlg = $('#dlg-admin');
+    if (!dlg) return;
+    openDialog(dlg);
+    await refreshAdminData();
+  }
+
+  async function refreshAdminData() {
+    const authBox = $('#admin-auth-box');
+    const mainBox = $('#admin-main-box');
+    try {
+      const overview = await api.getAdminOverview(adminAuthKey);
+      authBox.hidden = true;
+      mainBox.hidden = false;
+      $('#adm-cur-year').textContent = overview.academicYear;
+      $('#adm-total-students').textContent = overview.totalStudents;
+      $('#adm-active-students').textContent = overview.activeStudents;
+      $('#adm-alumni-students').textContent = overview.alumniStudents;
+
+      const studentsRes = await api.getAdminStudents(adminAuthKey);
+      const list = $('#adm-students-list');
+      if (!studentsRes.students || !studentsRes.students.length) {
+        list.replaceChildren(h('tr', {}, h('td', { colspan: '6', class: 'side-empty' }, 'No students registered yet.')));
+        return;
+      }
+      list.replaceChildren(...studentsRes.students.map((s) => {
+        const badgeCls = s.status === 'active' ? 'pill' : s.status === 'alumni' ? 'pill' : 'pill';
+        const actionBtn = s.status === 'active'
+          ? h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => changeStatus(s.studentId, 'alumni') }, 'Set Alumni')
+          : h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => changeStatus(s.studentId, 'active') }, 'Set Active');
+
+        const deactBtn = s.status !== 'deactivated'
+          ? h('button', { class: 'btn btn-ghost btn-sm btn-outline-danger', type: 'button', onclick: () => changeStatus(s.studentId, 'deactivated') }, 'Deactivate')
+          : h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => changeStatus(s.studentId, 'active') }, 'Reactivate');
+
+        return h('tr', {},
+          h('td', { class: 'mono font-bold' }, s.studentId),
+          h('td', {}, s.fullName),
+          h('td', {}, s.class || 'General'),
+          h('td', { class: 'mono' }, s.academicYear || '-'),
+          h('td', {}, h('span', { class: badgeCls }, s.status)),
+          h('td', { class: 'action-cells' }, actionBtn, deactBtn));
+      }));
+    } catch (err) {
+      if (err.status === 403) {
+        authBox.hidden = false;
+        mainBox.hidden = true;
+      } else {
+        toast(err.message, 'error');
+      }
+    }
+  }
+
+  async function changeStatus(studentId, newStatus) {
+    try {
+      await api.updateStudent(studentId, { status: newStatus }, adminAuthKey);
+      toast(`Updated ${studentId} to ${newStatus}.`, 'success');
+      await refreshAdminData();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+
+  async function advanceYear() {
+    const input = $('#adm-new-year');
+    const targetClass = $('#adm-target-class');
+    const newYear = input.value.trim();
+    if (!newYear) {
+      toast('Enter the new academic year (e.g. 2027-2028).', 'error');
+      input.focus();
+      return;
+    }
+    await withBusy($('#btn-adm-advance'), 'Advancing', async () => {
+      try {
+        await api.advanceAcademicYear({
+          newAcademicYear: newYear,
+          graduateFinalYear: !!targetClass.value.trim(),
+          targetClass: targetClass.value.trim()
+        }, adminAuthKey);
+        toast(`Academic year advanced to ${newYear}. All student records and IDs preserved.`, 'success');
+        input.value = '';
+        targetClass.value = '';
+        await refreshAdminData();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+  }
+
   // ---------- account block ----------
   function renderAccount() {
     const student = api.student();
@@ -176,15 +276,17 @@ GAP.auth = (() => {
       return;
     }
     const out = () => logout();
+    const badgeText = student.class && student.class !== 'General' ? `${student.studentId} • ${student.class}` : student.studentId;
     rail.append(h('div', { class: 'account-card' },
       h('div', {},
         h('div', { class: 'account-name' }, student.fullName),
-        h('div', { class: 'account-id' }, student.studentId)),
+        h('div', { class: 'account-id' }, badgeText),
+        student.status === 'alumni' ? h('span', { class: 'pill', style: 'margin-top: 4px;' }, 'Alumni') : null),
       api.isShared() ? h('div', { class: 'account-note' }, 'Signs out after 20 minutes of inactivity.') : null,
       h('div', { class: 'account-actions' },
         h('button', { class: 'btn btn-secondary btn-sm', type: 'button', onclick: out }, icon('logout'), h('span', {}, 'Log out')))));
     top.append(h('div', { class: 'account-actions' },
-      h('span', { class: 'pill', title: student.fullName }, student.studentId),
+      h('span', { class: 'pill', title: `${student.fullName} (${student.academicYear || ''})` }, student.studentId),
       h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Log out', onclick: out }, icon('logout'))));
   }
 
@@ -203,6 +305,14 @@ GAP.auth = (() => {
     }, 15000);
   }
 
+  async function loadCurrentAcademicYear() {
+    try {
+      const res = await api.getCurrentAcademicYear();
+      const yrInput = $('#su-year');
+      if (yrInput && !yrInput.value) yrInput.value = res.academicYear || '2026-2027';
+    } catch { /* ignore */ }
+  }
+
   function init() {
     $('#panel-login').addEventListener('submit', onLogin);
     $('#panel-signup').addEventListener('submit', onSignup);
@@ -210,6 +320,16 @@ GAP.auth = (() => {
     $('#panel-reset').addEventListener('submit', onReset);
     $('#btn-copy-id').addEventListener('click', () => copyWithToast($('#welcome-id').textContent, 'Student ID'));
     $('#btn-welcome-continue').addEventListener('click', finish);
+    const btnUnlock = $('#btn-admin-unlock');
+    if (btnUnlock) {
+      btnUnlock.addEventListener('click', async () => {
+        adminAuthKey = $('#admin-key-input').value.trim();
+        await refreshAdminData();
+      });
+    }
+    const btnAdv = $('#btn-adm-advance');
+    if (btnAdv) btnAdv.addEventListener('click', advanceYear);
+
     $('#auth-tabs').addEventListener('click', (e) => {
       const t = e.target.closest('.tab');
       if (t) location.hash = `#/${t.dataset.tab}`;
@@ -236,10 +356,11 @@ GAP.auth = (() => {
     });
     renderAccount();
     startIdleWatch();
+    loadCurrentAcademicYear();
   }
 
   return {
-    init, show, require, finish, renderAccount, pendingNotice: null,
+    init, show, require, finish, renderAccount, openAdminDialog, pendingNotice: null,
     setReturn: (r) => { returnTo = r; }
   };
 })();

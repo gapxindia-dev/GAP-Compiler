@@ -7,11 +7,10 @@ window.GAP = window.GAP || {};
   const api = GAP.api;
 
   const ROUTES = {
-    playground: { title: 'SQL Playground', nav: 'playground' },
+    playground: { title: 'SQL Playground', nav: 'playground', show: () => { if (GAP.playground && GAP.playground.refresh) GAP.playground.refresh(); } },
     zone: { title: 'My Zone', nav: 'zone', show: () => GAP.zone.show() },
     share: { title: 'Quick Share', nav: 'share', show: () => GAP.share.show() },
     board: { title: 'Class Board', nav: 'board', show: () => GAP.board.show() },
-    viva: { title: 'Viva', nav: 'viva' },
     login: { title: 'Log in', auth: 'login' },
     signup: { title: 'Sign up', auth: 'signup' },
     forgot: { title: 'Reset password', auth: 'forgot' }
@@ -57,14 +56,6 @@ window.GAP = window.GAP || {};
     firstRender = false;
   }
 
-  function initViva() {
-    $('#viva-list').replaceChildren(...GAP.vivaQuestions.map((item) => {
-      const answer = h('div', { class: 'answer' });
-      answer.innerHTML = item.a; // trusted static text from viva.js
-      return h('details', {}, h('summary', {}, item.q), answer);
-    }));
-  }
-
   function initTheme() {
     document.addEventListener('click', (e) => {
       if (!e.target.closest('[data-action="toggle-theme"]')) return;
@@ -93,7 +84,6 @@ window.GAP = window.GAP || {};
   function boot() {
     GAP.ui.initDialogs();
     initTheme();
-    initViva();
     GAP.auth.init();
     GAP.playground.init();
     GAP.zone.init();
