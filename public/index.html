@@ -104,19 +104,11 @@
             <div class="pg-main">
               <div class="toolbar">
                 <div class="toolbar-group">
-                  <label class="sr-only" for="db-select">Database</label>
-                  <select id="db-select" class="select select-sm">
-                    <option value="university">University</option>
-                    <option value="company">Company</option>
-                    <option value="library">Library</option>
-                    <option value="scratchpad">Scratch (empty)</option>
-                  </select>
                   <button class="btn btn-ghost btn-sm" type="button" id="btn-reset-db" title="Restore this database to its original data">
                     <svg class="icon" aria-hidden="true"><use href="#i-reset"/></svg><span>Reset data</span>
                   </button>
                 </div>
                 <div class="toolbar-group toolbar-actions">
-                  <button class="btn btn-ghost btn-sm" type="button" id="btn-wrap" title="Toggle line wrapping or horizontal scrolling" aria-pressed="false">Wrap</button>
                   <button class="btn btn-ghost btn-sm" type="button" id="btn-format">Format</button>
                   <button class="btn btn-ghost btn-sm" type="button" id="btn-clear">Clear</button>
                   <button class="btn btn-secondary btn-sm" type="button" id="btn-save-zone">

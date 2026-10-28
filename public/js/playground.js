@@ -529,25 +529,13 @@ GAP.playground = (() => {
       focusEditor();
     });
 
-    const btnWrap = $('#btn-wrap');
-    if (btnWrap) {
-      btnWrap.addEventListener('click', () => {
-        isWrapped = !isWrapped;
-        if (cm) {
-          cm.setOption('lineWrapping', isWrapped);
-          cm.refresh();
-        }
-        btnWrap.classList.toggle('active', isWrapped);
-        btnWrap.setAttribute('aria-pressed', String(isWrapped));
-        toast(isWrapped ? 'Line wrapping enabled.' : 'Line wrapping disabled (horizontal scroll).');
+    const btnResetDb = $('#btn-reset-db');
+    if (btnResetDb) {
+      btnResetDb.addEventListener('click', () => {
+        const key = GAP.sql.getActiveDbKey() || 'university';
+        switchDb(key, 'Database restored to its original data.');
       });
     }
-
-    $('#db-select').addEventListener('change', (e) => {
-      const label = e.target.options[e.target.selectedIndex].text;
-      switchDb(e.target.value, `Switched to the ${label} database.`);
-    });
-    $('#btn-reset-db').addEventListener('click', () => switchDb($('#db-select').value, 'Database restored to its original data.'));
     $('#btn-copy-csv').addEventListener('click', () => last && copyWithToast(GAP.sql.resultsToCsv(last.columns, last.values), 'CSV'));
     $('#btn-download-csv').addEventListener('click', () => {
       if (!last) return;
