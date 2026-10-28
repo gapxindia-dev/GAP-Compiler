@@ -309,25 +309,77 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 #sql-editor::placeholder { color: var(--faint); }
 
-/* CodeMirror Core & VS Code Styling */
+/* CodeMirror Core & VS Code Styling - Precision Alignment Fixes */
+.CodeMirror,
+.CodeMirror *,
+.CodeMirror *::before,
+.CodeMirror *::after {
+  box-sizing: content-box !important;
+}
+.CodeMirror-hints,
+.CodeMirror-hints * {
+  box-sizing: border-box !important;
+}
+
 .CodeMirror {
   height: 290px;
+  min-height: 160px;
   font-family: var(--font-mono);
   font-size: 0.86rem;
-  line-height: 1.6;
+  line-height: 1.6 !important;
   background: transparent;
   color: var(--text);
+  width: 100%;
+  position: relative;
+  direction: ltr;
 }
 .CodeMirror-gutters {
   background: var(--panel);
   border-right: 1px solid var(--line);
-  padding: 0 4px;
+  padding: 0 !important;
+  margin: 0 !important;
+  z-index: 3;
+  left: 0;
+  white-space: nowrap;
 }
 .CodeMirror-linenumber {
   color: var(--faint);
-  font-size: 0.78rem;
-  padding: 0 8px 0 4px;
-  min-width: 24px;
+  font-family: var(--font-mono);
+  font-size: 0.80rem;
+  line-height: 1.6 !important;
+  padding: 0 8px 0 4px !important;
+  min-width: 28px;
+  text-align: right;
+  white-space: nowrap;
+  box-sizing: content-box !important;
+}
+.CodeMirror-lines {
+  padding: 8px 0 !important;
+  cursor: text;
+}
+.CodeMirror pre.CodeMirror-line,
+.CodeMirror pre.CodeMirror-line-like {
+  padding: 0 8px !important;
+  line-height: 1.6 !important;
+  font-size: 0.86rem;
+  font-family: var(--font-mono);
+  box-sizing: content-box !important;
+}
+
+/* Prevent horizontal scroll desync when line-wrapping is active */
+.CodeMirror-wrap .CodeMirror-scroll {
+  overflow-x: hidden !important;
+}
+
+/* Reliable native horizontal scrolling when wrapping is off */
+.CodeMirror-scroll {
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+}
+.CodeMirror-hscrollbar {
+  bottom: 0;
+  left: 0;
+  overflow-x: scroll;
 }
 .CodeMirror-cursor {
   border-left: 2px solid var(--accent) !important;
@@ -402,7 +454,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .status.ok { background: var(--ok-soft); color: var(--ok); }
 .status.err { background: var(--danger-soft); color: var(--danger); }
 .meta { font: 400 0.78rem var(--font-mono); color: var(--muted); }
-.output { min-height: 150px; }
+.output { min-height: 150px; min-width: 0; max-width: 100%; }
 .output .placeholder, .output .done { display: grid; place-items: center; text-align: center; min-height: 150px; padding: 20px; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--r-lg); }
 .output .done strong { display: block; color: var(--text); margin-bottom: 4px; }
 .sql-error { padding: 14px 16px; border: 1px solid var(--danger); border-radius: var(--r-lg); background: var(--danger-soft); }
@@ -411,14 +463,83 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .sql-error p { margin-top: 10px; font-size: 0.88rem; color: var(--muted); }
 .note-line { margin-top: 8px; font-size: 0.82rem; color: var(--muted); }
 
-.table-wrap { overflow: auto; max-height: 420px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel); }
-table.data { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
-table.data th, table.data td { padding: 8px 12px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line); }
-table.data thead th { position: sticky; top: 0; background: var(--raised); font-weight: 600; z-index: 1; }
+/* Result Sets Navigation */
+.result-set-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+}
+.tab-result-set {
+  padding: 4px 12px;
+  font: 500 0.78rem/1.4 var(--font-mono);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.tab-result-set:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.tab-result-set.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.table-wrap {
+  overflow: auto;
+  max-height: 420px;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+}
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+  min-width: 100%;
+}
+table.data th, table.data td {
+  padding: 8px 12px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+table.data td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+table.data thead th {
+  position: sticky;
+  top: 0;
+  background: var(--raised);
+  font-weight: 600;
+  z-index: 1;
+}
+table.data thead th:hover {
+  background: var(--line);
+}
 table.data td { font-family: var(--font-mono); font-size: 0.82rem; }
-table.data th.rownum, table.data td.rownum { color: var(--faint); text-align: right; width: 1%; }
+table.data th.rownum, table.data td.rownum { color: var(--faint); text-align: right; width: 1%; user-select: none; }
 table.data tr:last-child td { border-bottom: 0; }
 table.data td.null { color: var(--faint); font-style: italic; }
+
+.btn.loading {
+  opacity: 0.7;
+  pointer-events: none;
+  cursor: wait;
+}
 
 .pg-side { position: sticky; top: 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; max-height: calc(100vh - 40px); overflow: auto; }
 .side-head { display: flex; justify-content: space-between; align-items: center; }

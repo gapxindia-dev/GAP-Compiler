@@ -1,9 +1,10 @@
 // sql-engine.js - SQLite (sql.js, WebAssembly) running entirely in the browser.
 // Nothing typed in the playground is sent to the server.
 
-window.GAP = window.GAP || {};
+const _root = typeof window !== 'undefined' ? window : global;
+_root.GAP = _root.GAP || {};
 
-GAP.sql = (() => {
+const sqlModule = (() => {
   const MAX_SQL_LENGTH = 50000;
   let SQL = null;
   let activeDb = null;
@@ -410,9 +411,14 @@ GAP.sql = (() => {
   }
 
   return {
-    init, loadDatabase, inspectTables, previewRows, execute, formatSql, resultsToCsv, getSchema,
+    init, loadDatabase, inspectTables, previewRows, execute, formatSql, resultsToCsv, getSchema, tipFor,
     templatesFor: (key) => templates[key] || [],
     getActiveDbKey: () => activeDbKey,
     MAX_SQL_LENGTH
   };
 })();
+
+_root.GAP.sql = sqlModule;
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = sqlModule;
+}

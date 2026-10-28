@@ -6,9 +6,12 @@ GAP.playground = (() => {
   const { $, h, icon, btn, toast, copyWithToast } = GAP.ui;
   const ROW_RENDER_LIMIT = 1000;
   let last = null; // last successful rows result, for CSV
+  let lastFullResult = null; // full result object with allSets
   let engineOk = false;
   let cm = null; // CodeMirror instance
   let activeTableSearch = '';
+  let isWrapped = false;
+  let isExecuting = false;
   const expandedTables = new Set();
   const tableLimits = {}; // tableName -> limit number (default 10)
 
@@ -21,6 +24,7 @@ GAP.playground = (() => {
   function setSqlText(val) {
     if (cm) {
       cm.setValue(val);
+      refresh();
     } else if (editor()) {
       editor().value = val;
       updateGutter();
@@ -81,48 +85,115 @@ GAP.playground = (() => {
     if (actions) actions.hidden = res.kind !== 'rows';
   }
 
-  function renderTable(res) {
-    const shown = res.values.slice(0, ROW_RENDER_LIMIT);
-    const head = h('tr', {}, h('th', { class: 'rownum', scope: 'col' }, '#'), res.columns.map((c) => h('th', { scope: 'col' }, c)));
+  function renderTable(res, activeSetIdx = 0) {
+    lastFullResult = res;
+    const targetSet = (res.allSets && res.allSets[activeSetIdx]) ? res.allSets[activeSetIdx] : res;
+    last = targetSet;
+
+    // Update row count in meta for the currently selected result set
+    const rMeta = $('#meta-rows');
+    if (rMeta) rMeta.textContent = `${targetSet.rowCount.toLocaleString()} row${targetSet.rowCount === 1 ? '' : 's'}`;
+
+    const shown = targetSet.values.slice(0, ROW_RENDER_LIMIT);
+    const head = h('tr', {},
+      h('th', { class: 'rownum', scope: 'col', title: 'Row number' }, '#'),
+      targetSet.columns.map((c) => h('th', { scope: 'col', title: String(c) }, String(c)))
+    );
+
     const body = shown.map((row, i) => h('tr', {},
       h('td', { class: 'rownum' }, i + 1),
-      row.map((v) => (v === null ? h('td', { class: 'null' }, 'NULL') : h('td', {}, String(v))))));
+      row.map((v) => {
+        if (v === null || v === undefined) {
+          return h('td', { class: 'null', title: 'NULL' }, 'NULL');
+        }
+        const strVal = String(v);
+        const isNum = typeof v === 'number' || (!isNaN(v) && !isNaN(parseFloat(v)) && !strVal.startsWith('0x'));
+        return h('td', { class: isNum ? 'num' : '', title: strVal }, strVal);
+      })
+    ));
+
     const out = $('#output');
-    out.replaceChildren(h('div', { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-label': 'Query results' },
-      h('table', { class: 'data' }, h('thead', {}, head), h('tbody', {}, body))));
-    const notes = [];
-    if (res.values.length > ROW_RENDER_LIMIT) {
-      notes.push(`Showing the first ${ROW_RENDER_LIMIT.toLocaleString()} of ${res.rowCount.toLocaleString()} rows. CSV export includes all rows.`);
+    const tableWrap = h('div', { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-label': 'Query results' },
+      h('table', { class: 'data' }, h('thead', {}, head), h('tbody', {}, body))
+    );
+
+    const elementsToAppend = [];
+
+    // Result Set Tabs if query returned multiple result sets
+    if (res.allSets && res.allSets.length > 1) {
+      const tabs = h('div', { class: 'result-set-tabs', role: 'tablist', 'aria-label': 'Query Result Sets' },
+        res.allSets.map((s, idx) => h('button', {
+          class: `tab-result-set${idx === activeSetIdx ? ' active' : ''}`,
+          type: 'button',
+          role: 'tab',
+          'aria-selected': String(idx === activeSetIdx),
+          onclick: () => renderTable(res, idx)
+        }, `Result ${idx + 1} (${s.rowCount.toLocaleString()} ${s.rowCount === 1 ? 'row' : 'rows'})`))
+      );
+      elementsToAppend.push(tabs);
     }
-    if (res.resultSets > 1) notes.push(`Your script produced ${res.resultSets} result sets. Showing the last one.`);
-    if (notes.length) out.append(h('p', { class: 'note-line' }, notes.join(' ')));
+
+    elementsToAppend.push(tableWrap);
+
+    const notes = [];
+    if (targetSet.values.length > ROW_RENDER_LIMIT) {
+      notes.push(`Showing the first ${ROW_RENDER_LIMIT.toLocaleString()} of ${targetSet.rowCount.toLocaleString()} rows. CSV export includes all rows.`);
+    }
+    if (res.resultSets > 1 && (!res.allSets || res.allSets.length <= 1)) {
+      notes.push(`Your script produced ${res.resultSets} result sets. Showing the last one.`);
+    }
+    if (notes.length) elementsToAppend.push(h('p', { class: 'note-line' }, notes.join(' ')));
+
+    out.replaceChildren(...elementsToAppend);
   }
 
   function run() {
+    if (isExecuting) return;
     if (!engineOk) { toast('The SQL engine is not ready.', 'error'); return; }
     const code = sqlText();
     if (!code.trim()) { toast('Write a query first.', 'error'); focusEditor(); return; }
+
+    const runBtn = $('#btn-run');
+    isExecuting = true;
+    if (runBtn) {
+      runBtn.disabled = true;
+      runBtn.classList.add('loading');
+    }
     setStatus('Running', '');
-    const res = GAP.sql.execute(code);
-    last = null;
-    if (!res.success) {
-      setStatus('Error', 'err');
-      setMeta({ execTimeMs: res.execTimeMs, kind: 'error' });
-      $('#output').replaceChildren(h('div', { class: 'sql-error', role: 'alert' },
-        h('h3', {}, 'SQL error'), h('pre', {}, res.error), res.tip ? h('p', {}, res.tip) : null));
-      return;
-    }
-    setStatus('Done', 'ok');
-    setMeta(res);
-    if (res.kind === 'rows') {
-      last = res;
-      renderTable(res);
-    } else {
-      $('#output').replaceChildren(h('div', { class: 'done' }, h('div', {}, h('strong', {}, res.kind === 'empty' ? 'No rows' : 'Done'), res.message)));
-    }
-    // Always refresh tables on successful query execution so live row counts, schemas, and previews update immediately!
-    renderTables();
-    updateCmSchema();
+
+    // Allow UI to update before synchronous WASM execution
+    setTimeout(() => {
+      try {
+        const res = GAP.sql.execute(code);
+        last = null;
+        lastFullResult = null;
+
+        if (!res.success) {
+          setStatus('Error', 'err');
+          setMeta({ execTimeMs: res.execTimeMs, kind: 'error' });
+          $('#output').replaceChildren(h('div', { class: 'sql-error', role: 'alert' },
+            h('h3', {}, 'SQL error'), h('pre', {}, res.error), res.tip ? h('p', {}, res.tip) : null));
+          return;
+        }
+
+        setStatus('Done', 'ok');
+        setMeta(res);
+        if (res.kind === 'rows') {
+          renderTable(res, (res.allSets ? res.allSets.length - 1 : 0));
+        } else {
+          $('#output').replaceChildren(h('div', { class: 'done' }, h('div', {}, h('strong', {}, res.kind === 'empty' ? 'No rows' : 'Done'), res.message)));
+        }
+
+        renderTables();
+        updateCmSchema();
+      } finally {
+        isExecuting = false;
+        if (runBtn) {
+          runBtn.disabled = false;
+          runBtn.classList.remove('loading');
+        }
+      }
+    }, 10);
   }
 
   function updateCmSchema() {
@@ -199,91 +270,92 @@ GAP.playground = (() => {
       // Columns Section
       const colsList = h('div', { class: 'tbl-cols-wrap' },
         t.columns.map((c) => {
-          const colBadges = [];
-          if (c.pk) colBadges.push(h('span', { class: 'col-badge pk', title: 'Primary Key' }, 'PK'));
-          if (c.fk) {
-            colBadges.push(h('span', {
-              class: 'col-badge fk',
-              title: `Foreign Key references ${c.fk.targetTable}(${c.fk.targetColumn})`
-            }, `FK → ${c.fk.targetTable}`));
-          }
-          if (c.notnull && !c.pk) {
-            colBadges.push(h('span', { class: 'col-badge nn', title: 'NOT NULL' }, 'NN'));
-          }
+          const badges = [];
+          if (c.pk) badges.push(h('span', { class: 'col-badge pk', title: 'Primary Key' }, 'PK'));
+          if (c.fk) badges.push(h('span', { class: 'col-badge fk', title: `Foreign Key -> ${c.fk.targetTable}.${c.fk.targetColumn}` }, 'FK'));
+          if (c.notnull && !c.pk) badges.push(h('span', { class: 'col-badge nn', title: 'Not Null' }, 'NN'));
 
           return h('div', {
             class: 'tbl-col-item',
-            title: `Click to insert column "${c.name}" (${c.type})`,
+            title: `Click to insert column "${c.name}"`,
             onclick: () => insertAtCursor(`"${c.name.replace(/"/g, '""')}"`)
           },
             h('span', { class: 'col-name' }, c.name),
             h('span', { class: 'col-type' }, c.type),
-            ...colBadges);
-        }));
+            badges.length ? h('span', { class: 'col-badges' }, ...badges) : null
+          );
+        })
+      );
 
-      // Expandable Live Preview Table
-      let previewEl = null;
-      if (isExpanded && preview) {
-        const setLimit = (newLimit) => {
-          tableLimits[t.name] = newLimit;
-          renderTables();
-        };
+      // Expandable Live Records Drawer
+      let drawer = null;
+      if (isExpanded) {
+        const pCols = preview.columns || [];
+        const pRows = preview.values || [];
 
-        const limitPills = [10, 25, 50].map((num) => h('button', {
-          class: `btn-limit-pill${limit === num ? ' active' : ''}`, type: 'button',
-          onclick: () => setLimit(num)
-        }, `${num}`));
+        const limitPills = [5, 10, 25, 50].map((n) => h('button', {
+          class: `btn-limit-pill${limit === n ? ' active' : ''}`,
+          type: 'button',
+          onclick: (e) => {
+            e.stopPropagation();
+            tableLimits[t.name] = n;
+            renderTables();
+          }
+        }, String(n)));
 
-        const previewHead = h('div', { class: 'tbl-preview-bar' },
-          h('span', { class: 'tbl-preview-meta' },
-            `Showing ${Math.min(preview.values.length, limit)} of ${t.rowCount} records`),
-          h('div', { class: 'tbl-limit-selector' },
-            h('span', { class: 'tbl-limit-lbl' }, 'Limit:'),
-            ...limitPills));
+        const drawerControls = h('div', { class: 'tbl-preview-controls' },
+          h('span', { class: 'tbl-preview-label' }, 'Show top:'),
+          ...limitPills
+        );
 
-        let tableContent = null;
-        if (!preview.values.length) {
-          tableContent = h('div', { class: 'tbl-preview-empty' }, 'No records in this table yet.');
+        let tableContent;
+        if (!pRows.length) {
+          tableContent = h('div', { class: 'tbl-preview-empty' }, 'No records in this table.');
         } else {
+          const thead = h('thead', {}, h('tr', {},
+            h('th', { class: 'rownum' }, '#'),
+            pCols.map((c) => h('th', {}, c))));
+          const tbody = h('tbody', {},
+            pRows.map((row, idx) => h('tr', {},
+              h('td', { class: 'rownum' }, idx + 1),
+              row.map((val) => (val === null ? h('td', { class: 'null' }, 'NULL') : h('td', {}, String(val))))
+            )));
           tableContent = h('div', { class: 'tbl-preview-table-wrap' },
-            h('table', { class: 'data tbl-preview-data' },
-              h('thead', {}, h('tr', {},
-                h('th', { class: 'rownum' }, '#'),
-                preview.columns.map((c) => {
-                  const isPk = t.columns.some((col) => col.name === c && col.pk);
-                  return h('th', {}, c, isPk ? h('span', { class: 'col-badge pk sm' }, 'PK') : null);
-                }))),
-              h('tbody', {}, preview.values.map((row, i) =>
-                h('tr', {},
-                  h('td', { class: 'rownum' }, i + 1),
-                  row.map((v) => (v === null ? h('td', { class: 'null' }, 'NULL') : h('td', {}, String(v)))))))));
+            h('table', { class: 'tbl-preview-data' }, thead, tbody));
         }
 
-        previewEl = h('div', { class: 'tbl-preview-drawer' }, previewHead, tableContent);
+        drawer = h('div', { class: 'tbl-preview-drawer' },
+          drawerControls,
+          tableContent);
       }
 
       return h('div', { class: `tbl-card${isExpanded ? ' expanded' : ''}` },
         headerBar,
         colsList,
-        previewEl);
+        drawer);
     }));
   }
 
   function renderTemplates() {
-    $('#template-list').replaceChildren(...GAP.sql.templatesFor(GAP.sql.getActiveDbKey()).map(([label, sql]) =>
-      h('button', {
-        class: 'chip', type: 'button', title: 'Put this template in the editor',
-        onclick: () => { setSqlText(sql); focusEditor(); }
-      }, label)));
+    const list = $('#template-list');
+    if (!list) return;
+    const items = GAP.sql.templatesFor(GAP.sql.getActiveDbKey());
+    list.replaceChildren(...items.map(([label, sql]) => h('button', {
+      class: 'chip', type: 'button',
+      onclick: () => {
+        setSqlText(sql);
+        focusEditor();
+        run();
+      }
+    }, label)));
   }
 
-  function clearOutput(message = 'Results appear here after you run a query.') {
+  function clearOutput() {
     last = null;
+    lastFullResult = null;
+    $('#output').replaceChildren(h('div', { class: 'placeholder' }, h('p', {}, 'Results appear here after you run a query.')));
     setStatus('Ready', '');
-    $('#meta-time').hidden = true;
-    $('#meta-rows').hidden = true;
-    $('#output-actions').hidden = true;
-    $('#output').replaceChildren(h('div', { class: 'placeholder' }, h('p', {}, message)));
+    setMeta({});
   }
 
   function switchDb(key, message) {
@@ -293,7 +365,8 @@ GAP.playground = (() => {
     renderTemplates();
     clearOutput();
     updateCmSchema();
-    if (message) toast(message, 'success');
+    refresh();
+    toast(message, 'success');
   }
 
   function showEngineFailure(error) {
@@ -314,6 +387,7 @@ GAP.playground = (() => {
     renderTemplates();
     clearOutput();
     updateCmSchema();
+    refresh();
   }
 
   // Used by My Zone, Quick Share and the Class Board to open SQL here.
@@ -321,14 +395,17 @@ GAP.playground = (() => {
     setSqlText(sql);
     location.hash = '#/playground';
     refresh();
-    if (runIt) setTimeout(run, 50);
+    if (runIt) setTimeout(run, 60);
   }
 
   function refresh() {
     if (cm) {
-      setTimeout(() => {
-        cm.refresh();
-      }, 20);
+      requestAnimationFrame(() => {
+        if (cm) {
+          cm.refresh();
+          setTimeout(() => { if (cm) cm.refresh(); }, 50);
+        }
+      });
     }
   }
 
@@ -348,7 +425,10 @@ GAP.playground = (() => {
         indentUnit: 2,
         tabSize: 2,
         indentWithTabs: false,
-        lineWrapping: true,
+        lineWrapping: false, // Default to horizontal scrolling with pinned gutter so code is never cut off
+        fixedGutter: true,
+        coverGutterNextToScrollbar: true,
+        scrollbarStyle: 'native',
         extraKeys: {
           'Ctrl-Enter': () => run(),
           'Cmd-Enter': () => run(),
@@ -397,6 +477,31 @@ GAP.playground = (() => {
         cm.setOption('theme', dark ? 'vscode-dark' : 'vscode-light');
       });
       observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+      // ResizeObserver to automatically refresh CodeMirror when container dimensions change
+      if (window.ResizeObserver) {
+        const ro = new ResizeObserver(() => {
+          if (cm && cm.getWrapperElement().offsetParent !== null) {
+            cm.refresh();
+          }
+        });
+        const wrap = $('#editor-wrap') || ed.parentElement;
+        if (wrap) ro.observe(wrap);
+      }
+
+      // Font loading listener to re-align glyph metrics once web fonts arrive
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(() => {
+          if (cm) cm.refresh();
+        });
+      }
+
+      // Window resize listener
+      window.addEventListener('resize', () => {
+        if (cm && cm.getWrapperElement().offsetParent !== null) {
+          cm.refresh();
+        }
+      });
     } else {
       // Fallback to basic textarea
       ed.addEventListener('input', updateGutter);
@@ -423,6 +528,21 @@ GAP.playground = (() => {
       clearOutput();
       focusEditor();
     });
+
+    const btnWrap = $('#btn-wrap');
+    if (btnWrap) {
+      btnWrap.addEventListener('click', () => {
+        isWrapped = !isWrapped;
+        if (cm) {
+          cm.setOption('lineWrapping', isWrapped);
+          cm.refresh();
+        }
+        btnWrap.classList.toggle('active', isWrapped);
+        btnWrap.setAttribute('aria-pressed', String(isWrapped));
+        toast(isWrapped ? 'Line wrapping enabled.' : 'Line wrapping disabled (horizontal scroll).');
+      });
+    }
+
     $('#db-select').addEventListener('change', (e) => {
       const label = e.target.options[e.target.selectedIndex].text;
       switchDb(e.target.value, `Switched to the ${label} database.`);

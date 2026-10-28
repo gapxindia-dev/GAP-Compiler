@@ -1,5 +1,5 @@
 'use strict';
-// GAP Compiler server
+// GAP Compiler server - PostgreSQL & Persistent Document Store support
 
 const express = require('express');
 const path = require('path');
@@ -38,23 +38,44 @@ const log = {
   error: (...a) => console.error(...a)
 };
 
-const store = new Store(DATA_DIR);
-migrations.run(store, log);
+const store = new Store(DATA_DIR, { log });
 
-// Signing secret: environment variable first; otherwise a generated key kept in
-// the data directory so sessions survive restarts.
-function loadSecret() {
+// Signing secret: environment variable first; otherwise persisted in DB / data directory
+// so sessions survive Render restarts and sleep/wake cycles.
+function loadSecret(storeRef) {
   if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.length >= 32) return process.env.SESSION_SECRET;
   if (process.env.SESSION_SECRET) log.warn('[security] SESSION_SECRET is shorter than 32 characters and was ignored.');
+
+  // Check stored meta in persistent store
+  const meta = storeRef ? (storeRef.get('meta') || {}) : {};
+  if (meta.sessionSecret && typeof meta.sessionSecret === 'string' && meta.sessionSecret.length >= 32) {
+    return meta.sessionSecret;
+  }
+
   const file = path.join(DATA_DIR, '.session-secret');
-  if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8').trim();
+  if (fs.existsSync(file)) {
+    try {
+      const fromFile = fs.readFileSync(file, 'utf8').trim();
+      if (fromFile.length >= 32) {
+        if (storeRef && storeRef.isReady()) {
+          storeRef.mutate('meta', (m) => { m.sessionSecret = fromFile; }).catch(() => {});
+        }
+        return fromFile;
+      }
+    } catch { /* ignore */ }
+  }
+
   const generated = crypto.randomBytes(48).toString('hex');
-  fs.writeFileSync(file, generated, { mode: 0o600 });
-  log.warn('[security] SESSION_SECRET is not set. A random secret was generated in the data directory. ' +
+  try { fs.writeFileSync(file, generated, { mode: 0o600 }); } catch { /* ignore */ }
+  if (storeRef && storeRef.isReady()) {
+    storeRef.mutate('meta', (m) => { m.sessionSecret = generated; }).catch(() => {});
+  }
+  log.warn('[security] SESSION_SECRET is not set in env. A random secret was generated and saved to persistent storage. ' +
     'Set SESSION_SECRET (32+ characters) in your environment for production.');
   return generated;
 }
-const SECRET = loadSecret();
+
+let SECRET = loadSecret(store);
 const limiter = new sec.RateLimiter();
 
 // Used so an unknown Student ID costs about the same time as a wrong password.
@@ -141,7 +162,7 @@ function authFromRequest(req) {
   if (!header.startsWith('Bearer ')) return null;
   const payload = sec.verifyToken(header.slice(7), SECRET, 'session');
   if (!payload) return null;
-  const users = store.get('users');
+  const users = store.get('users') || {};
   const user = Object.hasOwn(users, payload.sid) ? users[payload.sid] : null;
   if (!user || user.tokenVersion !== payload.tv) return null;
   return user;
@@ -171,6 +192,23 @@ function optionalAuth(req, res, next) {
   req.user = authFromRequest(req);
   next();
 }
+
+// ---------------------------------------------------------------- database startup
+async function initStorage() {
+  await store.init();
+  await migrations.run(store, log);
+  SECRET = loadSecret(store);
+}
+const initPromise = initStorage().catch((err) => {
+  log.error('Failed to initialize database storage:', err);
+  if (!IS_TEST) process.exit(1);
+});
+
+// Middleware ensuring store is ready before handling requests
+app.use((req, res, next) => {
+  if (store.isReady()) return next();
+  initPromise.then(() => next()).catch(next);
+});
 
 // ---------------------------------------------------------------- middleware
 app.use((req, res, next) => {
@@ -209,7 +247,7 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-app.get('/healthz', (req, res) => res.json({ ok: true }));
+app.get('/healthz', (req, res) => res.json({ ok: true, storage: store.driverDescription }));
 
 // ---------------------------------------------------------------- auth
 // IP limits count FAILURES only, so a school lab behind one shared address is not
@@ -230,26 +268,26 @@ app.post('/api/auth/register', wrap(async (req, res) => {
 
   const prefix = sec.extractNamePrefix(name);
   const passwordHash = await sec.hashPassword(password);
-  const user = store.mutate('users', (users) => {
-    let studentId;
-    store.mutate('meta', (meta) => {
-      let serial = typeof meta.nextStudentSerial === 'number' ? meta.nextStudentSerial : 1;
-      while (true) {
-        const candidate = sec.formatStudentId(prefix, serial);
-        serial++;
-        if (!Object.hasOwn(users, candidate)) {
-          studentId = candidate;
-          break;
-        }
-      }
-      meta.nextStudentSerial = serial;
-    });
 
-    const meta = store.get('meta') || {};
-    const curYear = meta.academicYear || '2026-2027';
-    const assignedYear = typeof academicYear === 'string' && academicYear.trim() ? academicYear.trim() : curYear;
-    const assignedClass = typeof studentClass === 'string' && studentClass.trim() ? studentClass.trim() : 'General';
+  // Compute next student ID safely from meta
+  const meta = store.get('meta') || {};
+  let serial = typeof meta.nextStudentSerial === 'number' ? meta.nextStudentSerial : 1;
+  let studentId;
+  while (true) {
+    const candidate = sec.formatStudentId(prefix, serial);
+    serial++;
+    if (!Object.hasOwn(existingUsers, candidate)) {
+      studentId = candidate;
+      break;
+    }
+  }
+  await store.mutate('meta', (m) => { m.nextStudentSerial = serial; });
 
+  const curYear = (store.get('meta') || {}).academicYear || '2026-2027';
+  const assignedYear = typeof academicYear === 'string' && academicYear.trim() ? academicYear.trim() : curYear;
+  const assignedClass = typeof studentClass === 'string' && studentClass.trim() ? studentClass.trim() : 'General';
+
+  const user = await store.mutate('users', (users) => {
     const record = {
       studentId, fullName: name, mobile: mobileNorm, passwordHash,
       academicYear: assignedYear, class: assignedClass, status: 'active',
@@ -259,6 +297,7 @@ app.post('/api/auth/register', wrap(async (req, res) => {
     users[studentId] = record;
     return record;
   });
+
   log.info(`[auth] registered ${user.studentId}`);
   res.status(201).json({ token: issueSession(user, false), student: publicUser(user) });
 }));
@@ -274,7 +313,7 @@ app.post('/api/auth/login', wrap(async (req, res) => {
   assertNotBlocked(ipKey, 40, 'Too many failed sign-ins from this network. Try again in a few minutes.');
   assertNotBlocked(idKey, 8, 'Too many failed attempts for this Student ID. Try again later.');
 
-  const users = store.get('users');
+  const users = store.get('users') || {};
   const user = Object.hasOwn(users, id) ? users[id] : null;
   if (user && user.status === 'deactivated') {
     throw new HttpError(403, 'This account has been deactivated. Contact your administrator.');
@@ -287,7 +326,9 @@ app.post('/api/auth/login', wrap(async (req, res) => {
     throw new HttpError(401, 'Incorrect Student ID or password.');
   }
   limiter.clear(idKey);
-  store.mutate('users', (all) => { all[id].lastLoginAt = now(); });
+  await store.mutate('users', (all) => {
+    if (all[id]) all[id].lastLoginAt = now();
+  });
   res.json({ token: issueSession(user, !!shared), student: publicUser(user) });
 }));
 
@@ -310,7 +351,7 @@ app.post('/api/auth/recover/verify', wrap(async (req, res) => {
     throw new HttpError(400, RECOVERY_ERROR);
   }
 
-  const users = store.get('users');
+  const users = store.get('users') || {};
   const user = Object.hasOwn(users, id) ? users[id] : null;
   if (user && user.status === 'deactivated') {
     throw new HttpError(403, 'This account has been deactivated. Contact your administrator.');
@@ -332,14 +373,14 @@ app.post('/api/auth/recover/reset', wrap(async (req, res) => {
   limit(`reset-ip:${req.ip}`, 30, 15 * 60_000, 'Too many attempts. Try again later.');
   const { resetToken, newPassword, confirmPassword } = req.body || {};
   const payload = sec.verifyToken(resetToken, SECRET, 'reset');
-  const users = store.get('users');
+  const users = store.get('users') || {};
   const user = payload && Object.hasOwn(users, payload.sid) ? users[payload.sid] : null;
   if (!user || user.tokenVersion !== payload.tv) {
     throw new HttpError(401, 'This reset session has expired. Start again from Forgot password.', { code: 'RESET_EXPIRED' });
   }
   checkPassword(newPassword, confirmPassword);
   const passwordHash = await sec.hashPassword(newPassword);
-  store.mutate('users', (all) => {
+  await store.mutate('users', (all) => {
     const u = all[payload.sid];
     if (!u || u.tokenVersion !== payload.tv) {
       throw new HttpError(401, 'This reset session has already been used.', { code: 'RESET_EXPIRED' });
@@ -354,7 +395,7 @@ app.post('/api/auth/recover/reset', wrap(async (req, res) => {
 
 // ---------------------------------------------------------------- My Zone
 const zoneFor = (zone, id) => (zone[id] ||= { queries: [], notes: [] });
-const readZone = (id) => (Object.hasOwn(store.get('zone'), id) ? store.get('zone')[id] : { queries: [], notes: [] });
+const readZone = (id) => (Object.hasOwn(store.get('zone') || {}, id) ? (store.get('zone') || {})[id] : { queries: [], notes: [] });
 
 function parseQuery(body) {
   return {
@@ -376,17 +417,17 @@ function parseNote(body) {
 
 app.get('/api/zone', requireAuth, (req, res) => {
   const z = readZone(req.user.studentId);
-  res.json({ queries: z.queries, notes: z.notes });
+  res.json({ queries: z.queries || [], notes: z.notes || [] });
 });
 
 function itemRoutes(kind, prefix, parse, label) {
   const base = `/api/zone/${kind}`;
 
-  app.post(base, requireAuth, (req, res) => {
+  app.post(base, requireAuth, wrap(async (req, res) => {
     const data = parse(req.body || {});
-    const item = store.mutate('zone', (zone) => {
+    const item = await store.mutate('zone', (zone) => {
       const z = zoneFor(zone, req.user.studentId);
-      if (z.queries.length + z.notes.length >= LIMITS.zoneItems) {
+      if ((z.queries.length || 0) + (z.notes.length || 0) >= LIMITS.zoneItems) {
         throw new HttpError(400, `My Zone is full (${LIMITS.zoneItems} items). Delete something first.`);
       }
       const record = { id: newId(prefix), ...data, createdAt: now(), updatedAt: now() };
@@ -394,11 +435,11 @@ function itemRoutes(kind, prefix, parse, label) {
       return record;
     });
     res.status(201).json({ item });
-  });
+  }));
 
-  app.put(`${base}/:id`, requireAuth, (req, res) => {
+  app.put(`${base}/:id`, requireAuth, wrap(async (req, res) => {
     const data = parse(req.body || {});
-    const item = store.mutate('zone', (zone) => {
+    const item = await store.mutate('zone', (zone) => {
       const z = zoneFor(zone, req.user.studentId); // always the caller's own zone
       const idx = z[kind].findIndex((x) => x.id === req.params.id);
       if (idx < 0) throw new HttpError(404, `${label} not found.`);
@@ -406,17 +447,17 @@ function itemRoutes(kind, prefix, parse, label) {
       return z[kind][idx];
     });
     res.json({ item });
-  });
+  }));
 
-  app.delete(`${base}/:id`, requireAuth, (req, res) => {
-    store.mutate('zone', (zone) => {
+  app.delete(`${base}/:id`, requireAuth, wrap(async (req, res) => {
+    await store.mutate('zone', (zone) => {
       const z = zoneFor(zone, req.user.studentId);
       const idx = z[kind].findIndex((x) => x.id === req.params.id);
       if (idx < 0) throw new HttpError(404, `${label} not found.`);
       z[kind].splice(idx, 1);
     });
     res.json({ ok: true });
-  });
+  }));
 }
 itemRoutes('queries', 'q', parseQuery, 'Query');
 itemRoutes('notes', 'n', parseNote, 'Note');
@@ -425,11 +466,11 @@ app.get('/api/zone/export/:format', requireAuth, (req, res) => {
   const z = readZone(req.user.studentId);
   const u = req.user;
   if (req.params.format === 'sql') {
-    let out = `-- GAP Compiler: My Zone export\n-- Student: ${u.fullName} (${u.studentId})\n-- Exported: ${now()}\n-- Queries: ${z.queries.length}\n\n`;
-    z.queries.forEach((q, i) => {
+    let out = `-- GAP Compiler: My Zone export\n-- Student: ${u.fullName} (${u.studentId})\n-- Exported: ${now()}\n-- Queries: ${(z.queries || []).length}\n\n`;
+    (z.queries || []).forEach((q, i) => {
       out += `-- ----------------------------------------\n-- [${i + 1}] ${q.title.replace(/\n/g, ' ')} (${q.subject})\n`;
       if (q.notes) out += `-- Notes: ${q.notes.replace(/\n/g, '\n-- ')}\n`;
-      if (q.tags.length) out += `-- Tags: ${q.tags.join(', ')}\n`;
+      if (q.tags && q.tags.length) out += `-- Tags: ${q.tags.join(', ')}\n`;
       out += `-- ----------------------------------------\n${q.sql}\n\n`;
     });
     res.setHeader('Content-Type', 'application/sql; charset=utf-8');
@@ -438,29 +479,30 @@ app.get('/api/zone/export/:format', requireAuth, (req, res) => {
   }
   if (req.params.format === 'json') {
     res.setHeader('Content-Disposition', `attachment; filename="${u.studentId}_my-zone.json"`);
-    return res.json({ studentId: u.studentId, fullName: u.fullName, exportedAt: now(), queries: z.queries, notes: z.notes });
+    return res.json({ studentId: u.studentId, fullName: u.fullName, exportedAt: now(), queries: z.queries || [], notes: z.notes || [] });
   }
   throw new HttpError(400, 'Unsupported export format. Choose "sql" or "json".');
 });
 
 // ---------------------------------------------------------------- Quick Share
-function purgeExpiredShares() {
+async function purgeExpiredShares() {
   const t = Date.now();
-  if (Object.values(store.get('shares')).some((s) => s.expiresAt <= t)) {
-    store.mutate('shares', (all) => {
+  const shares = store.get('shares') || {};
+  if (Object.values(shares).some((s) => s.expiresAt <= t)) {
+    await store.mutate('shares', (all) => {
       for (const [code, s] of Object.entries(all)) if (s.expiresAt <= t) delete all[code];
     });
   }
 }
-if (!IS_TEST) setInterval(() => { try { purgeExpiredShares(); } catch (e) { log.error(e); } }, 10 * 60_000).unref();
-purgeExpiredShares();
+if (!IS_TEST) setInterval(() => { purgeExpiredShares().catch((e) => log.error(e)); }, 10 * 60_000).unref();
+purgeExpiredShares().catch(() => {});
 
 const shareView = (s) => ({
   code: s.code, title: s.title, content: s.content, subject: s.subject,
   senderName: s.senderName, createdAt: s.createdAt, expiresAt: s.expiresAt
 });
 
-app.post('/api/share', requireAuth, (req, res) => {
+app.post('/api/share', requireAuth, wrap(async (req, res) => {
   const body = req.body || {};
   const title = cleanText(body.title, { ...LIMITS.title, label: 'Title' });
   const content = cleanText(body.content, { max: LIMITS.shareContent.max, min: 1, label: 'Content' });
@@ -468,12 +510,13 @@ app.post('/api/share', requireAuth, (req, res) => {
   const hours = Number(body.expiryHours);
   if (!SHARE_EXPIRY_HOURS.includes(hours)) throw new HttpError(400, 'Choose an expiry time from the list.');
 
-  purgeExpiredShares();
-  const mine = Object.values(store.get('shares')).filter((s) => s.ownerId === req.user.studentId).length;
+  await purgeExpiredShares();
+  const allShares = store.get('shares') || {};
+  const mine = Object.values(allShares).filter((s) => s.ownerId === req.user.studentId).length;
   if (mine >= LIMITS.activeShares) {
     throw new HttpError(400, `You already have ${LIMITS.activeShares} active codes. Delete one or wait for it to expire.`);
   }
-  const share = store.mutate('shares', (all) => {
+  const share = await store.mutate('shares', (all) => {
     const code = sec.generateShareCode((c) => Object.hasOwn(all, c));
     const created = Date.now();
     all[code] = {
@@ -483,39 +526,39 @@ app.post('/api/share', requireAuth, (req, res) => {
     return all[code];
   });
   res.status(201).json({ share: shareView(share) });
-});
+}));
 
-app.get('/api/share', requireAuth, (req, res) => {
-  purgeExpiredShares();
-  const mine = Object.values(store.get('shares'))
+app.get('/api/share', requireAuth, wrap(async (req, res) => {
+  await purgeExpiredShares();
+  const mine = Object.values(store.get('shares') || {})
     .filter((s) => s.ownerId === req.user.studentId)
     .sort((a, b) => b.createdAt - a.createdAt)
     .map(shareView);
   res.json({ shares: mine });
-});
+}));
 
-app.get('/api/share/:code', (req, res) => {
+app.get('/api/share/:code', wrap(async (req, res) => {
   limit(`share-get:${req.ip}`, 120, 15 * 60_000, 'Too many lookups. Try again in a few minutes.');
   const code = String(req.params.code || '').trim().toUpperCase();
-  const shares = store.get('shares');
+  const shares = store.get('shares') || {};
   const share = Object.hasOwn(shares, code) ? shares[code] : null;
   if (!share) throw new HttpError(404, 'No active share found for that code. Check it and try again.');
   if (share.expiresAt <= Date.now()) {
-    purgeExpiredShares();
+    await purgeExpiredShares();
     throw new HttpError(410, 'This code has expired. Ask the sender for a new one.');
   }
   res.json({ share: shareView(share) });
-});
+}));
 
-app.delete('/api/share/:code', requireAuth, (req, res) => {
+app.delete('/api/share/:code', requireAuth, wrap(async (req, res) => {
   const code = String(req.params.code || '').trim().toUpperCase();
-  store.mutate('shares', (all) => {
+  await store.mutate('shares', (all) => {
     const s = Object.hasOwn(all, code) ? all[code] : null;
     if (!s || s.ownerId !== req.user.studentId) throw new HttpError(404, 'Code not found.');
     delete all[code];
   });
   res.json({ ok: true });
-});
+}));
 
 // ---------------------------------------------------------------- Class Board
 // ownerId (the Student ID) is never sent to clients: it is half of the account
@@ -535,7 +578,7 @@ function postView(post, viewer) {
 app.get('/api/community', optionalAuth, (req, res) => {
   const q = String(req.query.query || '').trim().toLowerCase();
   const tag = String(req.query.tag || '').trim().toLowerCase();
-  const all = store.get('community');
+  const all = store.get('community') || [];
   let items = all;
   if (q) {
     items = items.filter((p) => [p.title, p.sql, p.content, p.description].some((f) => f && f.toLowerCase().includes(q)));
@@ -550,7 +593,7 @@ app.get('/api/community', optionalAuth, (req, res) => {
   res.json({ community: items.map((p) => postView(p, req.user)), tags, total: all.length });
 });
 
-app.post('/api/community', requireAuth, (req, res) => {
+app.post('/api/community', requireAuth, wrap(async (req, res) => {
   limit(`post:${req.user.studentId}`, 30, 3600_000, 'You are posting too quickly. Try again later.');
   const body = req.body || {};
   const type = body.type === 'note' ? 'note' : 'query';
@@ -567,33 +610,35 @@ app.post('/api/community', requireAuth, (req, res) => {
   if (type === 'query') post.sql = cleanText(body.sql, { max: LIMITS.sql.max, min: 1, label: 'SQL' });
   else post.content = cleanText(body.content, { max: LIMITS.note.max, min: 1, label: 'Note' });
 
-  store.mutate('community', (list) => { list.unshift(post); });
+  await store.mutate('community', (list) => { list.unshift(post); });
   res.status(201).json({ item: postView(post, req.user) });
-});
+}));
 
-app.delete('/api/community/:id', requireAuth, (req, res) => {
-  const post = store.get('community').find((p) => p.id === req.params.id);
+app.delete('/api/community/:id', requireAuth, wrap(async (req, res) => {
+  const comm = store.get('community') || [];
+  const post = comm.find((p) => p.id === req.params.id);
   if (!post) throw new HttpError(404, 'Post not found. It may already have been deleted.');
   if (!post.ownerId || post.ownerId !== req.user.studentId) {
     throw new HttpError(403, 'You can only delete your own posts.');
   }
-  store.mutate('community', (list) => {
+  await store.mutate('community', (list) => {
     const idx = list.findIndex((p) => p.id === req.params.id && p.ownerId === req.user.studentId);
     if (idx < 0) throw new HttpError(404, 'Post not found.');
     list.splice(idx, 1);
   });
   res.json({ ok: true });
-});
+}));
 
 app.put('/api/community/:id', requireAuth, wrap(async (req, res) => {
-  const post = store.get('community').find((p) => p.id === req.params.id);
+  const comm = store.get('community') || [];
+  const post = comm.find((p) => p.id === req.params.id);
   if (!post) throw new HttpError(404, 'Post not found.');
   if (!post.ownerId || post.ownerId !== req.user.studentId) {
     throw new HttpError(403, 'You can only edit your own posts.');
   }
   const body = req.body || {};
   const type = post.type;
-  const updated = store.mutate('community', (list) => {
+  const updated = await store.mutate('community', (list) => {
     const idx = list.findIndex((p) => p.id === req.params.id && p.ownerId === req.user.studentId);
     if (idx < 0) throw new HttpError(404, 'Post not found.');
     const p = list[idx];
@@ -612,8 +657,8 @@ app.put('/api/community/:id', requireAuth, wrap(async (req, res) => {
   res.json({ item: postView(updated, req.user) });
 }));
 
-app.post('/api/community/:id/like', requireAuth, (req, res) => {
-  const result = store.mutate('community', (list) => {
+app.post('/api/community/:id/like', requireAuth, wrap(async (req, res) => {
+  const result = await store.mutate('community', (list) => {
     const post = list.find((p) => p.id === req.params.id);
     if (!post) throw new HttpError(404, 'Post not found.');
     post.likedBy = post.likedBy || [];
@@ -623,7 +668,7 @@ app.post('/api/community/:id/like', requireAuth, (req, res) => {
     return { upvotes: post.likedBy.length, liked: i < 0 };
   });
   res.json(result);
-});
+}));
 
 // ---------------------------------------------------------------- Academic Year & Admin
 app.get('/api/academic-year/current', (req, res) => {
@@ -662,14 +707,14 @@ app.post('/api/admin/academic-year/advance', requireAdmin, wrap(async (req, res)
     throw new HttpError(400, 'Enter the new academic year (e.g. 2027-2028).');
   }
   const yr = newAcademicYear.trim();
-  store.mutate('meta', (m) => {
+  await store.mutate('meta', (m) => {
     m.academicYear = yr;
     m.academicYearHistory = m.academicYearHistory || [];
     if (!m.academicYearHistory.includes(yr)) m.academicYearHistory.push(yr);
   });
 
   if (graduateFinalYear && targetClass) {
-    store.mutate('users', (users) => {
+    await store.mutate('users', (users) => {
       for (const u of Object.values(users)) {
         if (u.class === targetClass && u.status === 'active') {
           u.status = 'alumni';
@@ -677,7 +722,7 @@ app.post('/api/admin/academic-year/advance', requireAdmin, wrap(async (req, res)
       }
     });
   } else if (newClass && targetClass) {
-    store.mutate('users', (users) => {
+    await store.mutate('users', (users) => {
       for (const u of Object.values(users)) {
         if (u.class === targetClass && u.status === 'active') {
           u.class = newClass;
@@ -707,7 +752,7 @@ app.get('/api/admin/students', requireAdmin, (req, res) => {
 app.put('/api/admin/students/:id', requireAdmin, wrap(async (req, res) => {
   const id = sec.normalizeStudentId(req.params.id);
   const { status, studentClass, academicYear, role } = req.body || {};
-  const updated = store.mutate('users', (users) => {
+  const updated = await store.mutate('users', (users) => {
     const u = users[id];
     if (!u) throw new HttpError(404, 'Student not found.');
     if (status && ['active', 'alumni', 'deactivated'].includes(status)) u.status = status;
@@ -736,8 +781,8 @@ app.get(/^\/(?!api\/)[^.]*$/, (req, res) => {
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   if (err instanceof HttpError) {
-    if (err.extra.retryAfter) res.setHeader('Retry-After', String(err.extra.retryAfter));
-    return res.status(err.status).json({ error: err.message, ...err.extra });
+    if (err.extra && err.extra.retryAfter) res.setHeader('Retry-After', String(err.extra.retryAfter));
+    return res.status(err.status).json({ error: err.message, ...(err.extra || {}) });
   }
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid request body.' });
   if (err.type === 'entity.too.large') return res.status(413).json({ error: 'That is too large to send.' });
@@ -746,9 +791,16 @@ app.use((err, req, res, next) => {
 });
 
 if (require.main === module || process.env.GAP_START === '1') {
-  app.listen(PORT, () => {
-    log.info(`GAP Compiler running at http://localhost:${PORT} (data: ${DATA_DIR})`);
+  initPromise.then(() => {
+    app.listen(PORT, () => {
+      log.info(`GAP Compiler running at http://localhost:${PORT} (${store.driverDescription})`);
+      if (store.isPg) {
+        log.info('[storage] Persistent PostgreSQL active. Data will survive all Render sleep/wake cycles and restarts.');
+      } else {
+        log.info(`[storage] Running with local files at ${DATA_DIR}. For persistent cloud storage on Render, set DATABASE_URL.`);
+      }
+    });
   });
 }
 
-module.exports = { app };
+module.exports = { app, store, initPromise };
